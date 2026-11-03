@@ -3,38 +3,21 @@ import datetime
 import time
 import logging
 
-# Configuração de Logs
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Mapeamento Estruturado da PMPR por Companhia e Cidades/Comarcas
-ESTRUTURA_PMPR = {
-    "1ª CIA (Cornélio Procópio)": [
-        "Cornélio Procópio", "Leópolis", "Nova Fátima", "Uraí", "Rancho Alegre", "Sertaneja"
-    ],
-    "2ª CIA (Bandeirantes)": [
-        "Bandeirantes", "Santa Amélia", "Andirá", "Barra do Jacaré", "Itambaracá", "Santa Mariana"
-    ],
-    "3ª CIA (Assaí)": [
-        "Assaí", "Nova América da Colina", "São Sebastião da Amoreira", "Congonhinhas",
-        "Santo Antônio do Paraíso", "São Jerônimo da Serra", "Santa Cecília do Pavão", "Nova Santa Bárbara"
-    ],
-    "Outras Comarcas": [
-        "Londrina"
-    ]
+# Mapeamento de Companhias e Cidades
+ESTRUTURA_COMPANHIAS = {
+    "1ª CIA (Cornélio Procópio)": ["Cornélio Procópio", "Leópolis", "Nova Fátima", "Uraí", "Rancho Alegre", "Sertaneja"],
+    "2ª CIA (Bandeirantes)": ["Bandeirantes", "Santa Amélia", "Andirá", "Barra do Jacaré", "Itambaracá", "Santa Mariana"],
+    "3ª CIA (Assaí)": ["Assaí", "Nova América da Colina", "São Sebastião da Amoreira", "Congonhinhas", "Santo Antônio do Paraíso", "São Jerônimo da Serra", "Santa Cecília do Pavão", "Nova Santa Bárbara"],
+    "Outras Comarcas": ["Londrina"]
 }
 
-# Lista plana de todas as cidades monitoradas
-CIDADES_MONITORADAS = [cidade for lista in ESTRUTURA_PMPR.values() for cidade in lista]
-INTERVALO_SEGUNDOS = 900  # 15 minutos
-
-# Configuração do WhatsApp
-WHATSAPP_API_URL = "http://localhost:8080/message/sendText"
-WHATSAPP_NUMERO = "5543999999999"
-
+# Lista plana com todos os municípios
+CIDADES_MONITORADAS = [cidade for cia, cidades in ESTRUTURA_COMPANHIAS.items() for cidade in cidades]
 DB_PATH = "monitor_bnmp_local.db"
 
 def init_db():
-    """Inicializa o banco de dados SQLite local."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -53,7 +36,6 @@ def init_db():
     conn.close()
 
 def ja_notificado(item_id):
-    """Verifica se o mandado ja foi notificado."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT 1 FROM mandados_notificados WHERE id = ?", (item_id,))
@@ -61,15 +43,7 @@ def ja_notificado(item_id):
     conn.close()
     return existe
 
-def obter_companhia(cidade):
-    """Identifica a Companhia responsável com base na cidade do mandado."""
-    for cia, cidades in ESTRUTURA_PMPR.items():
-        if cidade in cidades:
-            return cia
-    return "Outra Unidade"
-
 def salvar_mandado(item):
-    """Salva o mandado no banco local."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -83,7 +57,6 @@ def salvar_mandado(item):
     conn.close()
 
 def notificar_whatsapp(item):
-    """Envia o alerta formatado por WhatsApp."""
     mensagem = (
         f"🚨 *NOVO MANDADO DE PRISÃO DETECTADO - PMPR*\n\n"
         f"🛡️ *Unidade:* {item['companhia']}\n"
@@ -99,11 +72,10 @@ def notificar_whatsapp(item):
     return True
 
 def consultar_bnmp():
-    """Simula a consulta aos mandados recentes do BNMP 3.0."""
     agora = datetime.datetime.now()
     return [
         {
-            "id": f"BNMP-2026-00{int(agora.timestamp()) % 10000}",
+            "id": "BNMP-2026-005841",
             "nome": "ADRIANO RODRIGUES GOMES",
             "cidade": "Cornélio Procópio",
             "companhia": "1ª CIA (Cornélio Procópio)",
@@ -112,7 +84,7 @@ def consultar_bnmp():
             "link_pdf": "https://example.com/Mandado_Cornelio.pdf"
         },
         {
-            "id": f"BNMP-2026-00{int(agora.timestamp() + 1) % 10000}",
+            "id": "BNMP-2026-005842",
             "nome": "LUCAS SILVA NASCIMENTO",
             "cidade": "Bandeirantes",
             "companhia": "2ª CIA (Bandeirantes)",
@@ -121,7 +93,7 @@ def consultar_bnmp():
             "link_pdf": "https://example.com/Mandado_Bandeirantes.pdf"
         },
         {
-            "id": f"BNMP-2026-00{int(agora.timestamp() + 2) % 10000}",
+            "id": "BNMP-2026-005843",
             "nome": "JEFFERSON MATOS FERREIRA",
             "cidade": "Congonhinhas",
             "companhia": "3ª CIA (Assaí)",
@@ -132,7 +104,6 @@ def consultar_bnmp():
     ]
 
 def executar_varredura():
-    """Executa a varredura e envia as notificações."""
     mandados = consultar_bnmp()
     novos = 0
     for item in mandados:
