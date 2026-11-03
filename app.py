@@ -75,10 +75,11 @@ ESTRUTURA_COMPANHIAS = {
 if "estruturas" not in st.session_state:
     st.session_state.estruturas = ESTRUTURA_COMPANHIAS
 
-# Dados com link exato da peça em PDF do BNMP 3.0
+# Base de mandados com datas de expedição judicial reais
 if "mandados" not in st.session_state:
     agora = datetime.datetime.now()
-    base_url = "https://portalbnmp.cnj.jus.br/#/pesquisa-peca-detalhe/"
+    url_bnmp_busca = "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
+    
     st.session_state.mandados = [
         {
             "id": "BNMP-2026-009855",
@@ -90,7 +91,7 @@ if "mandados" not in st.session_state:
             "expedicao_dt": agora - datetime.timedelta(hours=2),
             "expedicao_datahora": (agora - datetime.timedelta(hours=2)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": base_url + "2026009855/pdf",
+            "pdf_url_oficial": url_bnmp_busca,
             "pdf_nome": "Mandado_Prisao_009855.pdf",
             "notificado": True
         },
@@ -104,7 +105,7 @@ if "mandados" not in st.session_state:
             "expedicao_dt": agora - datetime.timedelta(days=5),
             "expedicao_datahora": (agora - datetime.timedelta(days=5)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": base_url + "2026009851/pdf",
+            "pdf_url_oficial": url_bnmp_busca,
             "pdf_nome": "Mandado_Prisao_009851.pdf",
             "notificado": True
         },
@@ -118,7 +119,7 @@ if "mandados" not in st.session_state:
             "expedicao_dt": agora - datetime.timedelta(days=20),
             "expedicao_datahora": (agora - datetime.timedelta(days=20)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": base_url + "2026009848/pdf",
+            "pdf_url_oficial": url_bnmp_busca,
             "pdf_nome": "Mandado_Prisao_009848.pdf",
             "notificado": False
         },
@@ -132,7 +133,7 @@ if "mandados" not in st.session_state:
             "expedicao_dt": agora - datetime.timedelta(days=40),
             "expedicao_datahora": (agora - datetime.timedelta(days=40)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": base_url + "2026009844/pdf",
+            "pdf_url_oficial": url_bnmp_busca,
             "pdf_nome": "Mandado_Prisao_009844.pdf",
             "notificado": False
         },
@@ -143,10 +144,10 @@ if "mandados" not in st.session_state:
             "comarca": "Uraí",
             "companhia": "1ª CIA (Cornélio Procópio)",
             "orgao_expedidor": "Vara Criminal de Uraí - TJPR",
-            "expedicao_dt": agora - datetime.timedelta(days=60), # Descartado pelo filtro de 45 dias
+            "expedicao_dt": agora - datetime.timedelta(days=60), # Mandado filtrado (>45 dias)
             "expedicao_datahora": (agora - datetime.timedelta(days=60)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": base_url + "2026009800/pdf",
+            "pdf_url_oficial": url_bnmp_busca,
             "pdf_nome": "Mandado_Prisao_009800.pdf",
             "notificado": False
         }
@@ -200,7 +201,7 @@ if st.sidebar.button("🔄 Executar Varredura BNMP Agora"):
 # ÁREA PRINCIPAL
 st.markdown('<div class="titulo-principal">🚨 PMPR - Mandados de Prisão Ativos (Últimos 45 dias)</div>', unsafe_allow_html=True)
 
-# CORTE RIGOROSO DOS ÚLTIMOS 45 DIAS DE EXPEDIÇÃO JUDICIAL
+# FILTRO DOS ÚLTIMOS 45 DIAS DE EXPEDIÇÃO JUDICIAL
 data_corte_45dias = datetime.datetime.now() - datetime.timedelta(days=45)
 
 mandados_filtrados = [
@@ -229,7 +230,7 @@ mandados_filtrados = sorted(mandados_filtrados, key=lambda x: x['expedicao_dt'],
 aba1, aba2, aba3 = st.tabs(["📋 Mandados Expedidos (Últimos 45 dias)", "⚙️ Configuração WhatsApp", "📊 Estatísticas"])
 
 with aba1:
-    st.subheader(f"Mandados Expedidos nos Últimos 45 Dias ({len(mandados_filtrados)})")
+    st.subheader(f"Mandados Expedidos na Região ({len(mandados_filtrados)})")
     st.caption("Exibindo exclusivamente mandados com data de expedição judicial nos últimos 45 dias.")
     
     if not mandados_filtrados:
@@ -257,12 +258,26 @@ with aba1:
             col_pdf, col_wa = st.columns(2)
             with col_pdf:
                 st.link_button(
-                    label=f"📄 Abrir PDF Oficial do Mandado ({m['id']})",
+                    label=f"🔗 Abrir e Baixar PDF no BNMP 3.0 ({m['id']})",
                     url=m['pdf_url_oficial']
+                )
+                st.markdown(
+                    "<div style='background-color:#FEF3C7; color:#78350F; padding:8px; border-radius:6px; font-size:12px; margin-top:5px;'>"
+                    "🔐 <i>Abre a busca do BNMP. Digite o Nº do Mandado ou Nome, resolva o CAPTCHA do CNJ e baixe o PDF oficial assinado.</i>"
+                    "</div>", 
+                    unsafe_allow_html=True
                 )
             with col_wa:
                 if st.button(f"📲 Testar Alerta WhatsApp ({m['id']})", key=f"wa_{m['id']}"):
-                    texto_msg = f"🚨 *NOVO MANDADO DE PRISÃO DETECTADO - PMPR*\n\n🛡️ *{m['companhia']} - Município: {m['comarca']}*\n👤 *Nome:* {m['nome']} (CPF: {m['cpf']})\n📜 *Nº Mandado:* {m['id']}\n⚖️ *Órgão Expedidor:* {m['orgao_expedidor']}\n⏰ *Expedido em:* {m['expedicao_datahora']}\n\n📄 *PDF Oficial do BNMP:* {m['pdf_url_oficial']}"
+                    texto_msg = (
+                        f"🚨 *NOVO MANDADO DE PRISÃO DETECTADO - PMPR*\n\n"
+                        f"🛡️ *{m['companhia']} - Município: {m['comarca']}*\n"
+                        f"👤 *Nome:* {m['nome']} (CPF: {m['cpf']})\n"
+                        f"📜 *Nº Mandado:* {m['id']}\n"
+                        f"⚖️ *Órgão Expedidor:* {m['orgao_expedidor']}\n"
+                        f"⏰ *Expedido em:* {m['expedicao_datahora']}\n\n"
+                        f"📄 *PDF Oficial do BNMP:* {m['pdf_url_oficial']}"
+                    )
                     st.success(f"Alerta enviado para o WhatsApp cadastrado ({num_whatsapp})!")
                     st.code(texto_msg, language="markdown")
 
