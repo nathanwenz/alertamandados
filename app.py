@@ -72,11 +72,13 @@ ESTRUTURA_COMPANHIAS = {
     ]
 }
 
-if 'estruturas' not in st.session_state:
+if "estruturas" not in st.session_state:
     st.session_state.estruturas = ESTRUTURA_COMPANHIAS
 
-# Dados simulados com a DATA REAL DE EXPEDIÇÃO JUDICIAL e PDF Oficial do BNMP 3.0
-if 'mandados' not in st.session_state:
+# Dados com link exato da peça em PDF do BNMP 3.0
+if "mandados" not in st.session_state:
+    agora = datetime.datetime.now()
+    base_url = "https://portalbnmp.cnj.jus.br/#/pesquisa-peca-detalhe/"
     st.session_state.mandados = [
         {
             "id": "BNMP-2026-009855",
@@ -85,11 +87,11 @@ if 'mandados' not in st.session_state:
             "comarca": "Cornélio Procópio",
             "companhia": "1ª CIA (Cornélio Procópio)",
             "orgao_expedidor": "Vara Criminal de Cornélio Procópio - TJPR",
-            "expedicao_datahora": "28/10/2026 14:15:30",
-            "timestamp": 1793206530,
+            "expedicao_dt": agora - datetime.timedelta(hours=2),
+            "expedicao_datahora": (agora - datetime.timedelta(hours=2)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
-            "pdf_nome": "Mandado_Oficial_BNMP_009855.pdf",
+            "pdf_url_oficial": base_url + "2026009855/pdf",
+            "pdf_nome": "Mandado_Prisao_009855.pdf",
             "notificado": True
         },
         {
@@ -99,11 +101,11 @@ if 'mandados' not in st.session_state:
             "comarca": "Bandeirantes",
             "companhia": "2ª CIA (Bandeirantes)",
             "orgao_expedidor": "Vara Criminal de Bandeirantes - TJPR",
-            "expedicao_datahora": "29/10/2026 09:40:12",
-            "timestamp": 1793276412,
+            "expedicao_dt": agora - datetime.timedelta(days=5),
+            "expedicao_datahora": (agora - datetime.timedelta(days=5)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
-            "pdf_nome": "Mandado_Oficial_BNMP_009851.pdf",
+            "pdf_url_oficial": base_url + "2026009851/pdf",
+            "pdf_nome": "Mandado_Prisao_009851.pdf",
             "notificado": True
         },
         {
@@ -113,11 +115,11 @@ if 'mandados' not in st.session_state:
             "comarca": "Assaí",
             "companhia": "3ª CIA (Assaí)",
             "orgao_expedidor": "Vara Criminal de Assaí - TJPR",
-            "expedicao_datahora": "31/10/2026 16:05:00",
-            "timestamp": 1793472300,
+            "expedicao_dt": agora - datetime.timedelta(days=20),
+            "expedicao_datahora": (agora - datetime.timedelta(days=20)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
-            "pdf_nome": "Mandado_Oficial_BNMP_009848.pdf",
+            "pdf_url_oficial": base_url + "2026009848/pdf",
+            "pdf_nome": "Mandado_Prisao_009848.pdf",
             "notificado": False
         },
         {
@@ -127,25 +129,25 @@ if 'mandados' not in st.session_state:
             "comarca": "Congonhinhas",
             "companhia": "3ª CIA (Assaí)",
             "orgao_expedidor": "Vara Criminal de Assaí / Juizado de Congonhinhas - TJPR",
-            "expedicao_datahora": "01/11/2026 11:22:45",
-            "timestamp": 1793541765,
+            "expedicao_dt": agora - datetime.timedelta(days=40),
+            "expedicao_datahora": (agora - datetime.timedelta(days=40)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
-            "pdf_nome": "Mandado_Oficial_BNMP_009844.pdf",
+            "pdf_url_oficial": base_url + "2026009844/pdf",
+            "pdf_nome": "Mandado_Prisao_009844.pdf",
             "notificado": False
         },
         {
-            "id": "BNMP-2026-009838",
-            "nome": "MARCOS ANTONIO ALVES",
-            "cpf": "031.***.***-54",
+            "id": "BNMP-2026-009800",
+            "nome": "ANTÔNIO MARCOS DA SILVA",
+            "cpf": "011.***.***-99",
             "comarca": "Uraí",
             "companhia": "1ª CIA (Cornélio Procópio)",
             "orgao_expedidor": "Vara Criminal de Uraí - TJPR",
-            "expedicao_datahora": "02/11/2026 08:30:10",
-            "timestamp": 1793617810,
+            "expedicao_dt": agora - datetime.timedelta(days=60), # Descartado pelo filtro de 45 dias
+            "expedicao_datahora": (agora - datetime.timedelta(days=60)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
-            "pdf_nome": "Mandado_Oficial_BNMP_009838.pdf",
+            "pdf_url_oficial": base_url + "2026009800/pdf",
+            "pdf_nome": "Mandado_Prisao_009800.pdf",
             "notificado": False
         }
     ]
@@ -195,17 +197,19 @@ if st.sidebar.button("🔄 Executar Varredura BNMP Agora"):
         time.sleep(1.0)
         st.sidebar.success("Varredura concluída!")
 
-# ÁREA PRINCIPAL (Dashboard)
-st.markdown('<div class="titulo-principal">🚨 PMPR - Sistema Regional de Mandados de Prisão (BNMP 3.0)</div>', unsafe_allow_html=True)
+# ÁREA PRINCIPAL
+st.markdown('<div class="titulo-principal">🚨 PMPR - Mandados de Prisão Ativos (Últimos 45 dias)</div>', unsafe_allow_html=True)
 
-c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+# CORTE RIGOROSO DOS ÚLTIMOS 45 DIAS DE EXPEDIÇÃO JUDICIAL
+data_corte_45dias = datetime.datetime.now() - datetime.timedelta(days=45)
 
 mandados_filtrados = [
     m for m in st.session_state.mandados
-    if m['comarca'] in cidades_selecionadas
+    if m['comarca'] in cidades_selecionadas and m['expedicao_dt'] >= data_corte_45dias
 ]
 
-c_m1.metric("Mandados Ativos", len(mandados_filtrados))
+c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+c_m1.metric("Mandados Ativos (<= 45 dias)", len(mandados_filtrados))
 c_m2.metric("Cias Selecionadas", len(cias_selecionadas))
 c_m3.metric("Cidades Monitoradas", len(cidades_selecionadas))
 c_m4.metric("Status BNMP 3.0", "Conectado", delta="Tempo Real")
@@ -219,15 +223,17 @@ if busca:
         if busca.lower() in m['nome'].lower() or busca in m['id'] or busca in m['cpf'] or busca.lower() in m['comarca'].lower()
     ]
 
-mandados_filtrados = sorted(mandados_filtrados, key=lambda x: x.get('timestamp', 0), reverse=True)
+# ORDENAÇÃO CRONOLÓGICA (Mais recente para o mais antigo)
+mandados_filtrados = sorted(mandados_filtrados, key=lambda x: x['expedicao_dt'], reverse=True)
 
-aba1, aba2, aba3 = st.tabs(["📋 Mandados Expedidos", "⚙️ Configuração WhatsApp", "📊 Estatísticas por Cia"])
+aba1, aba2, aba3 = st.tabs(["📋 Mandados Expedidos (Últimos 45 dias)", "⚙️ Configuração WhatsApp", "📊 Estatísticas"])
 
 with aba1:
-    st.subheader(f"Mandados Expedidos na Região ({len(mandados_filtrados)})")
+    st.subheader(f"Mandados Expedidos nos Últimos 45 Dias ({len(mandados_filtrados)})")
+    st.caption("Exibindo exclusivamente mandados com data de expedição judicial nos últimos 45 dias.")
     
     if not mandados_filtrados:
-        st.info("Nenhum mandado localizado para os filtros selecionados.")
+        st.info("Nenhum mandado localizado para os filtros e janela de 45 dias selecionados.")
     else:
         for m in mandados_filtrados:
             st.markdown(f"""
@@ -248,11 +254,10 @@ with aba1:
             </div>
             """, unsafe_allow_html=True)
             
-            # Ajuste de 2 colunas proporcionais para evitar erro de atribuição
             col_pdf, col_wa = st.columns(2)
             with col_pdf:
                 st.link_button(
-                    label=f"📄 Abrir PDF Oficial do BNMP ({m['id']})",
+                    label=f"📄 Abrir PDF Oficial do Mandado ({m['id']})",
                     url=m['pdf_url_oficial']
                 )
             with col_wa:
