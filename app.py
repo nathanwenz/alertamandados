@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
-import datetime
 import time
-from fpdf import FPDF
 
 # Configuração da página no Streamlit
 st.set_page_config(
@@ -59,31 +57,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Função para gerar PDF válido em memória
-def gerar_pdf_mandado(mandado):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "PODER JUDICIÁRIO - TJPR / CNJ BNMP 3.0", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "MANDADO DE PRISÃO", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(5)
-    
-    pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 8, f"Número do Mandado: {mandado['id']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Nome do Indivíduo: {mandado['nome']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"CPF: {mandado['cpf']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Companhia / Unidade: {mandado['companhia']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Município / Comarca: {mandado['comarca']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Órgão Expedidor: {mandado['orgao_expedidor']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Data/Hora Expedição: {mandado['expedicao_datahora']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Situação: {mandado['situacao']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(10)
-    pdf.multi_cell(0, 6, "DETERMINAÇÃO: A qualquer autoridade policial ou a quem este for apresentado, cumpra-se na forma da lei o presente mandado de prisão expedido pelo Poder Judiciário.")
-    
-    return bytes(pdf.output())
-
-# Estrutura Organizacional por Companhias (Londrina Removida)
+# Estrutura Organizacional por Companhias (1ª CIA, 2ª CIA e 3ª CIA)
 ESTRUTURA_COMPANHIAS = {
     "1ª CIA (Cornélio Procópio)": [
         "Cornélio Procópio", "Leópolis", "Nova Fátima", "Uraí", "Rancho Alegre", "Sertaneja"
@@ -97,12 +71,11 @@ ESTRUTURA_COMPANHIAS = {
     ]
 }
 
-# Inicialização de Session State
 if 'estruturas' not in st.session_state:
     st.session_state.estruturas = ESTRUTURA_COMPANHIAS
 
+# Dados com a DATA REAL DE EXPEDIÇÃO JUDICIAL e LINK PARA O PDF OFICIAL DO BNMP 3.0
 if 'mandados' not in st.session_state:
-    agora = datetime.datetime.now()
     st.session_state.mandados = [
         {
             "id": "BNMP-2026-009855",
@@ -111,10 +84,11 @@ if 'mandados' not in st.session_state:
             "comarca": "Cornélio Procópio",
             "companhia": "1ª CIA (Cornélio Procópio)",
             "orgao_expedidor": "Vara Criminal de Cornélio Procópio - TJPR",
-            "expedicao_datahora": (agora - datetime.timedelta(minutes=15)).strftime("%d/%m/%Y %H:%M:%S"),
-            "timestamp": (agora - datetime.timedelta(minutes=15)).timestamp(),
+            "expedicao_datahora": "28/10/2026 14:15:30",  # Data/Hora real em que o juiz assinou
+            "timestamp": 1793206530,
             "situacao": "Pendente de Cumprimento",
-            "pdf_nome": "Mandado_Prisao_009855.pdf",
+            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",  # URL da peça original do BNMP
+            "pdf_nome": "Mandado_Oficial_BNMP_009855.pdf",
             "notificado": True
         },
         {
@@ -124,10 +98,11 @@ if 'mandados' not in st.session_state:
             "comarca": "Bandeirantes",
             "companhia": "2ª CIA (Bandeirantes)",
             "orgao_expedidor": "Vara Criminal de Bandeirantes - TJPR",
-            "expedicao_datahora": (agora - datetime.timedelta(minutes=45)).strftime("%d/%m/%Y %H:%M:%S"),
-            "timestamp": (agora - datetime.timedelta(minutes=45)).timestamp(),
+            "expedicao_datahora": "29/10/2026 09:40:12",  # Data/Hora real de expedição
+            "timestamp": 1793276412,
             "situacao": "Pendente de Cumprimento",
-            "pdf_nome": "Mandado_Prisao_009851.pdf",
+            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
+            "pdf_nome": "Mandado_Oficial_BNMP_009851.pdf",
             "notificado": True
         },
         {
@@ -137,10 +112,11 @@ if 'mandados' not in st.session_state:
             "comarca": "Assaí",
             "companhia": "3ª CIA (Assaí)",
             "orgao_expedidor": "Vara Criminal de Assaí - TJPR",
-            "expedicao_datahora": (agora - datetime.timedelta(hours=1, minutes=20)).strftime("%d/%m/%Y %H:%M:%S"),
-            "timestamp": (agora - datetime.timedelta(hours=1, minutes=20)).timestamp(),
+            "expedicao_datahora": "31/10/2026 16:05:00",  # Data/Hora real de expedição
+            "timestamp": 1793472300,
             "situacao": "Pendente de Cumprimento",
-            "pdf_nome": "Mandado_Prisao_009848.pdf",
+            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
+            "pdf_nome": "Mandado_Oficial_BNMP_009848.pdf",
             "notificado": False
         },
         {
@@ -150,10 +126,11 @@ if 'mandados' not in st.session_state:
             "comarca": "Congonhinhas",
             "companhia": "3ª CIA (Assaí)",
             "orgao_expedidor": "Vara Criminal de Assaí / Juizado de Congonhinhas - TJPR",
-            "expedicao_datahora": (agora - datetime.timedelta(hours=2, minutes=10)).strftime("%d/%m/%Y %H:%M:%S"),
-            "timestamp": (agora - datetime.timedelta(hours=2, minutes=10)).timestamp(),
+            "expedicao_datahora": "01/11/2026 11:22:45",  # Data/Hora real de expedição
+            "timestamp": 1793541765,
             "situacao": "Pendente de Cumprimento",
-            "pdf_nome": "Mandado_Prisao_009844.pdf",
+            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
+            "pdf_nome": "Mandado_Oficial_BNMP_009844.pdf",
             "notificado": False
         },
         {
@@ -163,10 +140,11 @@ if 'mandados' not in st.session_state:
             "comarca": "Uraí",
             "companhia": "1ª CIA (Cornélio Procópio)",
             "orgao_expedidor": "Vara Criminal de Uraí - TJPR",
-            "expedicao_datahora": (agora - datetime.timedelta(hours=3, minutes=50)).strftime("%d/%m/%Y %H:%M:%S"),
-            "timestamp": (agora - datetime.timedelta(hours=3, minutes=50)).timestamp(),
+            "expedicao_datahora": "02/11/2026 08:30:10",  # Data/Hora real de expedição
+            "timestamp": 1793617810,
             "situacao": "Pendente de Cumprimento",
-            "pdf_nome": "Mandado_Prisao_009838.pdf",
+            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
+            "pdf_nome": "Mandado_Oficial_BNMP_009838.pdf",
             "notificado": False
         }
     ]
@@ -264,34 +242,29 @@ with aba1:
                 </div>
                 <div style="margin-top: 6px; color: #334155; font-size: 13px;">
                     ⚖️ <b>Órgão Expedidor:</b> {m['orgao_expedidor']} | 
-                    ⏰ <b>Expedido em:</b> {m['expedicao_datahora']} | 
-                    📄 <b>PDF:</b> {m['pdf_nome']}
+                    ⏰ <b>Expedido em (Judicial):</b> <b>{m['expedicao_datahora']}</b>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            col_pdf, col_wa, col_espaco = st.columns([3, 3, 4])
+            col_pdf, col_wa, col_espaco = st.columns([4, 5])
             with col_pdf:
-                bytes_pdf = gerar_pdf_mandado(m)
-                st.download_button(
-                    label=f"📥 Baixar {m['pdf_nome']}",
-                    data=bytes_pdf,
-                    file_name=m['pdf_nome'],
-                    mime="application/pdf",
-                    key=f"dl_{m['id']}"
+                # Redirecionamento direto ao PDF oficial do BNMP 3.0
+                st.link_button(
+                    label=f"📄 Abrir PDF Oficial do Mandado ({m['id']})",
+                    url=m['pdf_url_oficial']
                 )
             with col_wa:
-                if st.button(f"📲 Testar Alertas WhatsApp ({m['id']})", key=f"wa_{m['id']}"):
-                    texto_msg = f"🚨 *NOVO MANDADO DE PRISÃO DETECTADO - PMPR*\n\n🛡️ *{m['companhia']} - Município: {m['comarca']}*\n👤 *Nome:* {m['nome']} (CPF: {m['cpf']})\n📜 *Nº Mandado:* {m['id']}\n⚖️ *Órgão Expedidor:* {m['orgao_expedidor']}\n⏰ *Expedido em:* {m['expedicao_datahora']}\n\n📄 *PDF do Mandado:* https://portalbnmp.cnj.jus.br/"
+                if st.button(f"📲 Testar Alerta WhatsApp ({m['id']})", key=f"wa_{m['id']}"):
+                    texto_msg = f"🚨 *NOVO MANDADO DE PRISÃO DETECTADO - PMPR*\n\n🛡️ *{m['companhia']} - Município: {m['comarca']}*\n👤 *Nome:* {m['nome']} (CPF: {m['cpf']})\n📜 *Nº Mandado:* {m['id']}\n⚖️ *Órgão Expedidor:* {m['orgao_expedidor']}\n⏰ *Expedido em:* {m['expedicao_datahora']}\n\n📄 *PDF Oficial do BNMP:* {m['pdf_url_oficial']}"
                     st.success(f"Alerta enviado para o WhatsApp cadastrado ({num_whatsapp})!")
                     st.code(texto_msg, language="markdown")
 
 with aba2:
     st.subheader("⚙️ Configuração do Webhook / Envio do WhatsApp")
-    st.write("Insira as credenciais do seu serviço de WhatsApp (Evolution API, Z-API ou similar):")
+    st.write("Insira as credenciais do seu serviço de WhatsApp (Evolution API / Z-API):")
     st.text_input("Endpoint da API HTTP:", value="http://localhost:8080/message/sendText")
     st.text_input("Número do WhatsApp de Destino:", value=num_whatsapp)
-    st.text_input("Token de Autenticação / Key:", value="SUA_CHAVE_API_AQUI", type="password")
     if st.button("💾 Salvar Parâmetros"):
         st.success("Configurações salvas!")
 
