@@ -1,0 +1,36 @@
+name: Coletor Automatizado BNMP Nuvem
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Executa automaticamente a cada 30 minutos
+  workflow_dispatch:        # Permite disparar manualmente pelo site do GitHub
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar Código do Repositório
+        uses: actions/checkout@v3
+
+      - name: Configurar Ambiente Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Instalar Dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas
+
+      - name: Executar Robô na Nuvem
+        run: |
+          python coletor_github.py
+
+      - name: Salvar Atualizações de Dados no GitHub
+        run: |
+          git config --global user.name "GitHub Action Bot"
+          git config --global user.email "action@github.com"
+          git add mandados.json || true
+          git commit -m "Auto-update: Dados BNMP [skip ci]" || true
+          git push
