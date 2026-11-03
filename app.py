@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import datetime
 import time
 
 # Configuração da página no Streamlit
@@ -74,7 +75,7 @@ ESTRUTURA_COMPANHIAS = {
 if 'estruturas' not in st.session_state:
     st.session_state.estruturas = ESTRUTURA_COMPANHIAS
 
-# Dados com a DATA REAL DE EXPEDIÇÃO JUDICIAL e LINK PARA O PDF OFICIAL DO BNMP 3.0
+# Dados simulados com a DATA REAL DE EXPEDIÇÃO JUDICIAL e PDF Oficial do BNMP 3.0
 if 'mandados' not in st.session_state:
     st.session_state.mandados = [
         {
@@ -84,10 +85,10 @@ if 'mandados' not in st.session_state:
             "comarca": "Cornélio Procópio",
             "companhia": "1ª CIA (Cornélio Procópio)",
             "orgao_expedidor": "Vara Criminal de Cornélio Procópio - TJPR",
-            "expedicao_datahora": "28/10/2026 14:15:30",  # Data/Hora real em que o juiz assinou
+            "expedicao_datahora": "28/10/2026 14:15:30",
             "timestamp": 1793206530,
             "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",  # URL da peça original do BNMP
+            "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
             "pdf_nome": "Mandado_Oficial_BNMP_009855.pdf",
             "notificado": True
         },
@@ -98,7 +99,7 @@ if 'mandados' not in st.session_state:
             "comarca": "Bandeirantes",
             "companhia": "2ª CIA (Bandeirantes)",
             "orgao_expedidor": "Vara Criminal de Bandeirantes - TJPR",
-            "expedicao_datahora": "29/10/2026 09:40:12",  # Data/Hora real de expedição
+            "expedicao_datahora": "29/10/2026 09:40:12",
             "timestamp": 1793276412,
             "situacao": "Pendente de Cumprimento",
             "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
@@ -112,7 +113,7 @@ if 'mandados' not in st.session_state:
             "comarca": "Assaí",
             "companhia": "3ª CIA (Assaí)",
             "orgao_expedidor": "Vara Criminal de Assaí - TJPR",
-            "expedicao_datahora": "31/10/2026 16:05:00",  # Data/Hora real de expedição
+            "expedicao_datahora": "31/10/2026 16:05:00",
             "timestamp": 1793472300,
             "situacao": "Pendente de Cumprimento",
             "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
@@ -126,7 +127,7 @@ if 'mandados' not in st.session_state:
             "comarca": "Congonhinhas",
             "companhia": "3ª CIA (Assaí)",
             "orgao_expedidor": "Vara Criminal de Assaí / Juizado de Congonhinhas - TJPR",
-            "expedicao_datahora": "01/11/2026 11:22:45",  # Data/Hora real de expedição
+            "expedicao_datahora": "01/11/2026 11:22:45",
             "timestamp": 1793541765,
             "situacao": "Pendente de Cumprimento",
             "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
@@ -140,7 +141,7 @@ if 'mandados' not in st.session_state:
             "comarca": "Uraí",
             "companhia": "1ª CIA (Cornélio Procópio)",
             "orgao_expedidor": "Vara Criminal de Uraí - TJPR",
-            "expedicao_datahora": "02/11/2026 08:30:10",  # Data/Hora real de expedição
+            "expedicao_datahora": "02/11/2026 08:30:10",
             "timestamp": 1793617810,
             "situacao": "Pendente de Cumprimento",
             "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/",
@@ -194,7 +195,7 @@ if st.sidebar.button("🔄 Executar Varredura BNMP Agora"):
         time.sleep(1.0)
         st.sidebar.success("Varredura concluída!")
 
-# ÁREA PRINCIPAL
+# ÁREA PRINCIPAL (Dashboard)
 st.markdown('<div class="titulo-principal">🚨 PMPR - Sistema Regional de Mandados de Prisão (BNMP 3.0)</div>', unsafe_allow_html=True)
 
 c_m1, c_m2, c_m3, c_m4 = st.columns(4)
@@ -247,11 +248,11 @@ with aba1:
             </div>
             """, unsafe_allow_html=True)
             
-            col_pdf, col_wa, col_espaco = st.columns([4, 5])
+            # Ajuste de 2 colunas proporcionais para evitar erro de atribuição
+            col_pdf, col_wa = st.columns(2)
             with col_pdf:
-                # Redirecionamento direto ao PDF oficial do BNMP 3.0
                 st.link_button(
-                    label=f"📄 Abrir PDF Oficial do Mandado ({m['id']})",
+                    label=f"📄 Abrir PDF Oficial do BNMP ({m['id']})",
                     url=m['pdf_url_oficial']
                 )
             with col_wa:
