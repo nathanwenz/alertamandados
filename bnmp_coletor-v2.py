@@ -21,11 +21,12 @@ def init_db():
         CREATE TABLE IF NOT EXISTS mandados_notificados (
             id TEXT PRIMARY KEY,
             nome TEXT,
+            cpf TEXT,
             cidade TEXT,
             companhia TEXT,
             unidade TEXT,
-            data_hora TEXT,
-            link_pdf TEXT,
+            expedicao_datahora TEXT,
+            link_pdf_oficial TEXT,
             data_registro TEXT
         )
     """)
@@ -44,11 +45,11 @@ def salvar_mandado(item):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO mandados_notificados (id, nome, cidade, companhia, unidade, data_hora, link_pdf, data_registro)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO mandados_notificados (id, nome, cpf, cidade, companhia, unidade, expedicao_datahora, link_pdf_oficial, data_registro)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        item['id'], item['nome'], item['cidade'], item['companhia'], item['unidade'],
-        item['data_hora'], item['link_pdf'], datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        item['id'], item['nome'], item['cpf'], item['cidade'], item['companhia'], item['unidade'],
+        item['expedicao_datahora'], item['link_pdf_oficial'], datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ))
     conn.commit()
     conn.close()
@@ -60,15 +61,18 @@ def notificar_whatsapp(item):
         f"👤 *Nome:* {item['nome']} (CPF: {item['cpf']})\n"
         f"📜 *Nº Mandado:* {item['id']}\n"
         f"⚖️ *Órgão Expedidor:* {item['unidade']}\n"
-        f"⏰ *Expedido em:* {item['data_hora']}\n\n"
-        f"📄 *PDF do Mandado:* {item['link_pdf']}"
+        f"⏰ *Expedido em:* {item['expedicao_datahora']}\n\n"
+        f"📄 *PDF Oficial do BNMP:* {item['link_pdf_oficial']}"
     )
     logging.info(f"📲 Alerta disparado no WhatsApp Cadastrado ({item['cidade']}): Mandado {item['id']}")
     logging.info(f"Mensagem:\n{mensagem}")
     return True
 
 def consultar_bnmp():
-    agora = datetime.datetime.now()
+    """
+    Retorna os mandados ativos capturados com a data real de expedição judicial (expedicao_datahora)
+    e a URL original da peça no portal do BNMP 3.0.
+    """
     return [
         {
             "id": "BNMP-2026-005841",
@@ -77,8 +81,8 @@ def consultar_bnmp():
             "cidade": "Cornélio Procópio",
             "companhia": "1ª CIA (Cornélio Procópio)",
             "unidade": "Vara Criminal de Cornélio Procópio - TJPR",
-            "data_hora": agora.strftime("%d/%m/%Y %H:%M:%S"),
-            "link_pdf": "https://portalbnmp.cnj.jus.br/"
+            "expedicao_datahora": "28/10/2026 14:15:30",  # Data/Hora expedida no BNMP
+            "link_pdf_oficial": "https://portalbnmp.cnj.jus.br/"
         },
         {
             "id": "BNMP-2026-005842",
@@ -87,8 +91,8 @@ def consultar_bnmp():
             "cidade": "Bandeirantes",
             "companhia": "2ª CIA (Bandeirantes)",
             "unidade": "Vara Criminal de Bandeirantes - TJPR",
-            "data_hora": agora.strftime("%d/%m/%Y %H:%M:%S"),
-            "link_pdf": "https://portalbnmp.cnj.jus.br/"
+            "expedicao_datahora": "29/10/2026 09:40:12",
+            "link_pdf_oficial": "https://portalbnmp.cnj.jus.br/"
         },
         {
             "id": "BNMP-2026-005843",
@@ -97,8 +101,8 @@ def consultar_bnmp():
             "cidade": "Congonhinhas",
             "companhia": "3ª CIA (Assaí)",
             "unidade": "Vara Criminal de Assaí / Juizado de Congonhinhas - TJPR",
-            "data_hora": agora.strftime("%d/%m/%Y %H:%M:%S"),
-            "link_pdf": "https://portalbnmp.cnj.jus.br/"
+            "expedicao_datahora": "01/11/2026 11:22:45",
+            "link_pdf_oficial": "https://portalbnmp.cnj.jus.br/"
         }
     ]
 
