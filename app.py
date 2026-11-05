@@ -1,11 +1,11 @@
-import streamlit as st
-import pandas as pd
 import datetime
 import json
 import os
 import re
 import io
 import unicodedata
+import pandas as pd
+import streamlit as st
 
 # Configuração da página no Streamlit
 st.set_page_config(
@@ -72,7 +72,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Estrutura Organizacional Hierárquica da PMPR
+# Estrutura Organizacional Hierárquica da PMPR (Companhia -> Comarcas Sedes -> Municípios)
 ESTRUTURA_COMPANHIAS = {
     "1ª CIA (Cornélio Procópio)": {
         "Cornélio Procópio": ["Cornélio Procópio", "Leópolis", "Rancho Alegre"],
@@ -135,7 +135,7 @@ def normalizar_municipio(nome_raw):
     if raw_clean in MAPA_NORMALIZACAO_MUNICIPIOS:
         return MAPA_NORMALIZACAO_MUNICIPIOS[raw_clean]
     for key, oficial in MAPA_NORMALIZACAO_MUNICIPIOS.items():
-        if re.search(r'' + re.escape(key) + r'', raw_clean):
+        if re.search(r'\b' + re.escape(key) + r'\b', raw_clean):
             return oficial
     return raw
 
@@ -146,79 +146,16 @@ def identificar_comarca_e_cia(texto_mencionado):
     txt_clean = remover_acentos(str(texto_mencionado).lower())
     
     for m_key, m_oficial in MAPA_NORMALIZACAO_MUNICIPIOS.items():
-        if re.search(r'' + re.escape(m_key) + r'', txt_clean):
+        if re.search(r'\b' + re.escape(m_key) + r'\b', txt_clean):
             comarca = MAPA_MUNICIPIO_PARA_COMARCA.get(m_oficial, "Outras Comarcas")
             cia = MAPA_COMARCA_PARA_CIA.get(comarca, "Outras Comarcas (Paraná)")
             return m_oficial, cia
 
     for com_key, cia_val in MAPA_COMARCA_PARA_CIA.items():
-        if re.search(r'' + re.escape(remover_acentos(com_key.lower())) + r'', txt_clean):
+        if re.search(r'\b' + re.escape(remover_acentos(com_key.lower())) + r'\b', txt_clean):
             return com_key, cia_val
 
     return "Outras Comarcas", "Outras Comarcas (Paraná)"
-
-def extrair_data_robusta(val):
-    if pd.isna(val) or val is None:
-        return None, 0.0
-
-    if isinstance(val, (datetime.datetime, pd.Timestamp)):
-        dt = val.to_pydatetime() if isinstance(val, pd.Timestamp) else val
-        return dt.strftime("%d/%m/%Y %H:%M:%S"), float(dt.timestamp())
-
-    if isinstance(val, datetime.date):
-        dt = datetime.datetime.combine(val, datetime.time.min)
-        return dt.strftime("%d/%m/%Y %H:%M:%S"), float(dt.timestamp())
-
-    s = str(val).strip()
-    if not s or s.lower() == 'nan':
-        return None, 0.0
-
-    # Remover padrão de processo CNJ para evitar confusão com data
-    s_limpo = re.sub(r'\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}', '', s)
-
-    # 1. Procurar DD/MM/YYYY HH:MM:SS ou DD/MM/YYYY
-    m_br = re.search(r'(\d{2})[/.-](\d{2})[/.-](\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?', s_limpo)
-    if m_br:
-        day, month, year, h, m, sec = m_br.groups()
-        h = int(h) if h else 0
-        m = int(m) if m else 0
-        sec = int(sec) if sec else 0
-        try:
-            dt = datetime.datetime(int(year), int(month), int(day), h, m, sec)
-            return dt.strftime("%d/%m/%Y %H:%M:%S"), float(dt.timestamp())
-        except Exception:
-            pass
-
-    # 2. Procurar YYYY-MM-DD HH:MM:SS ou YYYY-MM-DD
-    m_iso = re.search(r'(\d{4})[/.-](\d{2})[/.-](\d{2})(?:[T\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?', s_limpo)
-    if m_iso:
-        year, month, day, h, m, sec = m_iso.groups()
-        h = int(h) if h else 0
-        m = int(m) if m else 0
-        sec = int(sec) if sec else 0
-        try:
-            dt = datetime.datetime(int(year), int(month), int(day), h, m, sec)
-            return dt.strftime("%d/%m/%Y %H:%M:%S"), float(dt.timestamp())
-        except Exception:
-            pass
-
-    return s, 0.0
-
-def encontrar_coluna_data(df):
-    cols = list(df.columns)
-    cols_clean = [re.sub(r'[^a-z0-9]', '', str(c).lower()) for c in cols]
-
-    # Prioridade 1: colunas de expedicao / emissao / peca
-    for orig, c in zip(cols, cols_clean):
-        if any(k in c for k in ['expedic', 'expedid', 'emiss', 'datapeca', 'dtexp', 'dataexp']) and not any(k in c for k in ['nasc', 'cumpr', 'baixa']):
-            return orig
-
-    # Prioridade 2: colunas de data gerais (excluindo nascimento / cumprimento)
-    for orig, c in zip(cols, cols_clean):
-        if ('data' in c or 'dt' in c or 'date' in c) and not any(k in c for k in ['nasc', 'cumpr', 'baixa', 'revog', 'atualiz']):
-            return orig
-
-    return None
 
 def carregar_mandados_salvos():
     if os.path.exists(ARQUIVO_DADOS):
@@ -280,8 +217,7 @@ if 'mandados' not in st.session_state:
     st.session_state.mandados = carregar_mandados_salvos()
 
 def processar_texto_importado(texto_bruto):
-    linhas = [l.strip() for l in texto_bruto.split('
-') if l.strip()]
+    linhas = [l.strip() for l in texto_bruto.splitlines() if l.strip()]
     novos_mandados = []
     
     eh_pipe = any('|' in l for l in linhas)
@@ -342,7 +278,7 @@ def processar_texto_importado(texto_bruto):
         nome = str(b.get('nome', '')).strip() or "NÃO INFORMADO"
         cpf = str(b.get('cpf', '')).strip() or "000.***.***-00"
         orgao = str(b.get('orgao', '')).strip() or "Vara Criminal da Comarca"
-        raw_data = str(b.get('data', '')).strip()
+        expedicao_raw = str(b.get('data', '')).strip()
         
         cidade_bruta = b.get('cidade', '')
         cidade, cia = identificar_comarca_e_cia(orgao + " " + cidade_bruta)
@@ -350,10 +286,18 @@ def processar_texto_importado(texto_bruto):
             cidade = normalizar_municipio(cidade_bruta)
             cia = MAPA_COMARCA_PARA_CIA.get(MAPA_MUNICIPIO_PARA_COMARCA.get(cidade, "Outras Comarcas"), "Outras Comarcas (Paraná)")
         
-        expedicao_fmt, ts = extrair_data_robusta(raw_data)
-        if not expedicao_fmt:
-            expedicao_fmt = raw_data if raw_data else "Não informada"
-            ts = 0.0
+        ts = 0.0
+        expedicao_str = "Não informada"
+        if expedicao_raw and expedicao_raw != "nan" and expedicao_raw != "Não informada":
+            try:
+                if ":" in expedicao_raw:
+                    dt = datetime.datetime.strptime(expedicao_raw, "%d/%m/%Y %H:%M:%S")
+                else:
+                    dt = datetime.datetime.strptime(expedicao_raw, "%d/%m/%Y")
+                ts = float(dt.timestamp())
+                expedicao_str = dt.strftime("%d/%m/%Y %H:%M:%S")
+            except Exception:
+                expedicao_str = expedicao_raw
 
         if not any(m['id'] == mandado_id for m in st.session_state.mandados) and not any(m['id'] == mandado_id for m in novos_mandados):
             item = {
@@ -363,7 +307,7 @@ def processar_texto_importado(texto_bruto):
                 "comarca": str(cidade),
                 "companhia": str(cia),
                 "orgao_expedidor": str(orgao),
-                "expedicao_datahora": str(expedicao_fmt),
+                "expedicao_datahora": str(expedicao_str),
                 "timestamp": float(ts),
                 "situacao": "Pendente de Cumprimento",
                 "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
@@ -376,6 +320,26 @@ def processar_texto_importado(texto_bruto):
         return len(novos_mandados)
     return 0
 
+def encontrar_coluna_data(df):
+    cols_clean = [remover_acentos(str(c).lower().strip()) for c in df.columns]
+    
+    # 1. Busca termos exatos de expedição/emissão
+    for orig, c in zip(df.columns, cols_clean):
+        if any(k in c for k in ['dataexpedicao', 'data_expedicao', 'dt_expedicao', 'data_de_expedicao', 'data de expedicao', 'data_emissao', 'data da peca', 'data_peca']):
+            return orig
+            
+    # 2. Busca qualquer coluna que tenha 'exped' ou 'emiss' sem conter 'nasc'
+    for orig, c in zip(df.columns, cols_clean):
+        if ('exped' in c or 'emiss' in c or 'peca' in c) and 'nasc' not in c:
+            return orig
+
+    # 3. Busca 'data' genérica desde que não seja nascimento
+    for orig, c in zip(df.columns, cols_clean):
+        if 'data' in c and not any(bad in c for bad in ['nasc', 'cumpr', 'baixa', 'canc']):
+            return orig
+            
+    return None
+
 def processar_dataframe_importado(df):
     if df is None or df.empty:
         return 0
@@ -383,38 +347,32 @@ def processar_dataframe_importado(df):
     cols_map = {}
     cols_clean = [remover_acentos(str(c).lower().strip()) for c in df.columns]
     
-    # 1. ID
     for orig, c in zip(df.columns, cols_clean):
         if any(k in c for k in ['no mandado', 'num_mandado', 'numero_mandado', 'n_mandado', 'no do mandado', 'numero do mandado', 'numeropeca', 'peca']) or c in ['id', 'mandado', 'numero']:
             cols_map['id'] = orig
             break
 
-    # 2. Nome
     for orig, c in zip(df.columns, cols_clean):
         if 'nome' in c or 'procurado' in c or 'individuo' in c or 'pessoa' in c:
             cols_map['nome'] = orig
             break
 
-    # 3. CPF
     for orig, c in zip(df.columns, cols_clean):
         if 'cpf' in c:
             cols_map['cpf'] = orig
             break
 
-    # 4. Órgão
     for orig, c in zip(df.columns, cols_clean):
         if 'orgao' in c or 'expedidor' in c or 'vara' in c or 'juizado' in c:
             cols_map['orgao'] = orig
             break
 
-    # 5. Comarca
     for orig, c in zip(df.columns, cols_clean):
         if 'comarca' in c or 'municipio' in c or 'cidade' in c or 'jurisdicao' in c:
             if cols_map.get('orgao') != orig:
                 cols_map['comarca'] = orig
                 break
 
-    # 6. Data (com busca priorizada de data de expedição)
     col_data_oficial = encontrar_coluna_data(df)
     if col_data_oficial:
         cols_map['data'] = col_data_oficial
@@ -430,17 +388,27 @@ def processar_dataframe_importado(df):
         cpf = str(row[cols_map['cpf']]).strip() if 'cpf' in cols_map and pd.notna(row[cols_map['cpf']]) else "000.***.***-00"
         orgao = str(row[cols_map['orgao']]).strip() if 'orgao' in cols_map and pd.notna(row[cols_map['orgao']]) else "Vara Criminal da Comarca"
         cidade_raw = str(row[cols_map['comarca']]).strip() if 'comarca' in cols_map and pd.notna(row[cols_map['comarca']]) else ""
-        raw_data = row[cols_map['data']] if 'data' in cols_map and pd.notna(row[cols_map['data']]) else ""
+        expedicao_val = row[cols_map['data']] if 'data' in cols_map and pd.notna(row[cols_map['data']]) else None
 
         cidade, cia = identificar_comarca_e_cia(orgao + " " + cidade_raw)
         if cidade == "Outras Comarcas":
             cidade = normalizar_municipio(cidade_raw)
             cia = MAPA_COMARCA_PARA_CIA.get(MAPA_MUNICIPIO_PARA_COMARCA.get(cidade, "Outras Comarcas"), "Outras Comarcas (Paraná)")
 
-        expedicao_fmt, ts = extrair_data_robusta(raw_data)
-        if not expedicao_fmt:
-            expedicao_fmt = str(raw_data).strip() if str(raw_data).strip() and str(raw_data).strip().lower() != 'nan' else "Não informada"
-            ts = 0.0
+        ts = 0.0
+        expedicao_str = "Não informada"
+        if expedicao_val is not None:
+            exp_s = str(expedicao_val).strip()
+            if exp_s and exp_s != "nan":
+                try:
+                    dt_parsed = pd.to_datetime(exp_s, dayfirst=True, errors='coerce')
+                    if pd.notna(dt_parsed):
+                        ts = float(dt_parsed.timestamp())
+                        expedicao_str = dt_parsed.strftime("%d/%m/%Y %H:%M:%S")
+                    else:
+                        expedicao_str = exp_s
+                except Exception:
+                    expedicao_str = exp_s
 
         if not any(m['id'] == mandado_id for m in st.session_state.mandados) and not any(m['id'] == mandado_id for m in novos_mandados):
             item = {
@@ -450,7 +418,7 @@ def processar_dataframe_importado(df):
                 "comarca": str(cidade),
                 "companhia": str(cia),
                 "orgao_expedidor": str(orgao),
-                "expedicao_datahora": str(expedicao_fmt),
+                "expedicao_datahora": str(expedicao_str),
                 "timestamp": float(ts),
                 "situacao": "Pendente de Cumprimento",
                 "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
@@ -608,21 +576,22 @@ for m in st.session_state.mandados:
             dt_m = None
 
     if "50 Dias" in periodo_selecionado:
-        if dt_m and dt_m >= data_corte_50d and dt_m.year == 2026:
-            mandados_validos_periodo.append(m)
-        elif not dt_m and "2026" in exp_str:
+        if dt_m is not None:
+            if dt_m >= data_corte_50d and dt_m.year == 2026:
+                mandados_validos_periodo.append(m)
+        elif "2026" in exp_str:
             mandados_validos_periodo.append(m)
     elif "2026 Completo" in periodo_selecionado:
-        if (dt_m and dt_m.year == 2026) or "2026" in exp_str:
+        if (dt_m is not None and dt_m.year == 2026) or "2026" in exp_str:
             mandados_validos_periodo.append(m)
     elif "30 Dias" in periodo_selecionado:
-        if dt_m and dt_m >= (agora_dt - datetime.timedelta(days=30)):
+        if dt_m is not None and dt_m >= (agora_dt - datetime.timedelta(days=30)):
             mandados_validos_periodo.append(m)
     elif "90 Dias" in periodo_selecionado:
-        if dt_m and dt_m >= (agora_dt - datetime.timedelta(days=90)):
+        if dt_m is not None and dt_m >= (agora_dt - datetime.timedelta(days=90)):
             mandados_validos_periodo.append(m)
     elif "180 Dias" in periodo_selecionado:
-        if dt_m and dt_m >= (agora_dt - datetime.timedelta(days=180)):
+        if dt_m is not None and dt_m >= (agora_dt - datetime.timedelta(days=180)):
             mandados_validos_periodo.append(m)
     else:
         mandados_validos_periodo.append(m)
@@ -682,7 +651,7 @@ with aba1:
                 </div>
                 <div style="margin-top: 10px;">
                     <b>📜 Número do Mandado (Copie para pesquisar no BNMP):</b><br>
-                    <div class=caixa-mandado>{m['id']}</div>
+                    <div class="caixa-mandado">{m['id']}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -697,7 +666,7 @@ with aba1:
                 </a>
                 """, unsafe_allow_html=True)
             with col_info:
-                st.caption("ℹ️ *Copie o número do mandado acima, clique no botão para abrir o site do CNJ, cole o número e resolva o CAPTCHA para visualizar o PDF oficial.*")[1]
+                st.caption("ℹ️ *Copie o número do mandado acima, clique no botão para abrir o site do CNJ, cole o número e resolva o CAPTCHA para visualizar o PDF oficial.*")
             st.markdown("<br>", unsafe_allow_html=True)
 
 with aba2:
