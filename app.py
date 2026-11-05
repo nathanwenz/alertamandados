@@ -275,6 +275,70 @@ def processar_texto_importado(texto_bruto):
         return len(novos_mandados)
     return 0
 
+def processar_dataframe_csv(df):
+    agora = datetime.datetime.now()
+    novos_mandados = []
+    
+    col_map = {}
+    for col in df.columns:
+        c_lower = str(col).lower().strip()
+        if any(k in c_lower for k in ['id', 'mandado', 'numero', 'nº', 'peca']):
+            col_map['id'] = col
+        elif any(k in c_lower for k in ['nome', 'procurado', 'reu', 'indivíduo', 'individuo']):
+            col_map['nome'] = col
+        elif 'cpf' in c_lower:
+            col_map['cpf'] = col
+        elif any(k in c_lower for k in ['comarca', 'cidade', 'municipio', 'município']):
+            col_map['comarca'] = col
+        elif any(k in c_lower for k in ['orgao', 'órgão', 'vara', 'expedidor']):
+            col_map['orgao_expedidor'] = col
+        elif any(k in c_lower for k in ['data', 'expedicao', 'expedição', 'datahora']):
+            col_map['expedicao_datahora'] = col
+
+    for idx, row in df.iterrows():
+        mandado_id = str(row.get(col_map.get('id', ''), '')).strip()
+        if not mandado_id or mandado_id.lower() == 'nan':
+            continue
+            
+        nome = str(row.get(col_map.get('nome', ''), 'NÃO INFORMADO')).strip().upper()
+        cpf = str(row.get(col_map.get('cpf', ''), '000.***.***-00')).strip()
+        comarca_raw = str(row.get(col_map.get('comarca', ''), '')).strip()
+        orgao = str(row.get(col_map.get('orgao_expedidor', ''), 'Vara Criminal da Comarca')).strip()
+        expedicao = str(row.get(col_map.get('expedicao_datahora', ''), agora.strftime("%d/%m/%Y %H:%M:%S"))).strip()
+
+        cidade = normalizar_cidade(comarca_raw)
+        cia = identificar_companhia(cidade)
+
+        try:
+            if ":" in expedicao:
+                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y %H:%M:%S")
+            else:
+                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
+            ts = float(dt.timestamp())
+        except Exception:
+            ts = float(agora.timestamp())
+
+        if not any(m['id'] == mandado_id for m in st.session_state.mandados) and not any(m['id'] == mandado_id for m in novos_mandados):
+            item = {
+                "id": str(mandado_id),
+                "nome": str(nome),
+                "cpf": str(cpf),
+                "comarca": str(cidade),
+                "companhia": str(cia),
+                "orgao_expedidor": str(orgao),
+                "expedicao_datahora": str(expedicao),
+                "timestamp": float(ts),
+                "situacao": "Pendente de Cumprimento",
+                "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
+            }
+            novos_mandados.append(item)
+
+    if novos_mandados:
+        st.session_state.mandados.extend(novos_mandados)
+        salvar_mandados_disco(st.session_state.mandados)
+        return len(novos_mandados)
+    return 0
+
 # BARRA LATERAL (Sidebar)
 st.sidebar.title("🚨 Filtros PMPR")
 st.sidebar.markdown("**Monitor de Mandados BNMP 3.0**")
@@ -296,6 +360,19 @@ cidades_selecionadas = st.sidebar.multiselect(
     options=cidades_disponiveis,
     default=cidades_disponiveis
 )
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📥 Exportar Base Completa (CSV)")
+
+df_todos_mandados = pd.DataFrame(st.session_state.mandados)
+if not df_todos_mandados.empty:
+    csv_data = df_todos_mandados[['id', 'nome', 'cpf', 'comarca', 'companhia', 'orgao_expedidor', 'expedicao_datahora', 'situacao']].to_csv(index=False, encoding='utf-8-sig')
+    st.sidebar.download_button(
+        label="📥 Baixar Mandados em CSV",
+        data=csv_data,
+        file_name=f"mandados_parana_pmpr_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv"
+    )
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚙️ Ações do Banco de Dados")
@@ -344,7 +421,7 @@ if busca:
 
 mandados_filtrados = sorted(mandados_filtrados, key=lambda x: x.get('timestamp', 0), reverse=True)
 
-aba1, aba2, aba3 = st.tabs(["📋 Mandados Expedidos", "🚀 Importar Rápido (Bookmarklet / Texto)", "📊 Estatísticas"])
+aba1, aba2, aba3 = st.tabs(["📋 Mandados Expedidos", "🚀 Importar CSV / Bookmarklet / Texto", "📊 Estatísticas"])
 
 with aba1:
     st.subheader(f"Mandados Expedidos na Região ({len(mandados_filtrados)})")
@@ -388,21 +465,42 @@ with aba1:
             st.markdown("<br>", unsafe_allow_html=True)
 
 with aba2:
-    st.subheader("🚀 Importação Automática dos Mandados Reais do BNMP")
-    st.write("Cole aqui o texto copiado pelo botão **`🚀 Enviar Mandados PMPR`** (Bookmarklet do navegador) ou cole diretamente o texto selecionado na tela do BNMP:")
+    st.subheader("🚀 Importação por Arquivo CSV / Excel ou Texto")
     
-    texto_input = st.text_area("Texto dos Mandados Capturados:", height=200, placeholder="Cole o texto capturado ou copiado da tela do BNMP 3.0 aqui...")
+    col_csv, col_texto = st.columns(2)
     
-    if st.button("📥 Processar e Salvar no App", type="primary"):
-        if texto_input.strip():
-            qtd = processar_texto_importado(texto_input)
-            if qtd > 0:
-                st.success(f"✅ {qtd} novo(s) mandado(s) real(is) importado(s) e salvo(s) com sucesso!")
-                recarregar_app()
+    with col_csv:
+        st.markdown("#### 📁 Opção A: Importar Arquivo CSV / Excel")
+        arquivo_upload = st.file_uploader("Selecione uma planilha (.csv ou .xlsx):", type=['csv', 'xlsx'])
+        if arquivo_upload is not None:
+            try:
+                if arquivo_upload.name.endswith('.csv'):
+                    df_up = pd.read_csv(arquivo_upload)
+                else:
+                    df_up = pd.read_excel(arquivo_upload)
+                
+                qtd_csv = processar_dataframe_csv(df_up)
+                if qtd_csv > 0:
+                    st.success(f"✅ {qtd_csv} novo(s) mandado(s) importado(s) a partir do arquivo CSV/Excel!")
+                    recarregar_app()
+                else:
+                    st.info("Nenhum mandado novo foi adicionado do arquivo (ou já existiam no banco).")
+            except Exception as err:
+                st.error(f"Erro ao ler arquivo: {err}")
+                
+    with col_texto:
+        st.markdown("#### 📝 Opção B: Cole o Texto (Bookmarklet ou Tela BNMP)")
+        texto_input = st.text_area("Texto dos Mandados Capturados:", height=180, placeholder="Cole aqui o texto copiado pelo Bookmarklet ou selecionado na tela do BNMP...")
+        if st.button("📥 Processar e Salvar Texto", type="primary"):
+            if texto_input.strip():
+                qtd = processar_texto_importado(texto_input)
+                if qtd > 0:
+                    st.success(f"✅ {qtd} novo(s) mandado(s) real(is) importado(s) e salvo(s) com sucesso!")
+                    recarregar_app()
+                else:
+                    st.warning("Nenhum mandado novo foi adicionado.")
             else:
-                st.warning("Nenhum mandado novo foi adicionado (ou os mandados colados já existem no banco).")
-        else:
-            st.error("Por favor, cole os dados antes de clicar em processar.")
+                st.error("Por favor, cole os dados antes de clicar em processar.")
 
 with aba3:
     st.subheader("📊 Estatísticas Operacionais da Região")
