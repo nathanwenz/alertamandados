@@ -98,7 +98,6 @@ def remover_acentos(texto):
         return ""
     return "".join(c for c in unicodedata.normalize("NFD", str(texto)) if unicodedata.category(c) != "Mn")
 
-# Tabela de normalização para evitar divergências de caixa e acentuação
 MAPA_NORMALIZACAO = {}
 for cia_key, cidades_list in ESTRUTURA_COMPANHIAS.items():
     for c in cidades_list:
@@ -197,12 +196,12 @@ def processar_texto_importado(texto_bruto):
                 partes = [p.strip() for p in l.split('|')]
                 if len(partes) >= 2:
                     blocos_dados.append({
-                        'id': partes[0] if len(partes) > 0 else '',
-                        'nome': partes[1] if len(partes) > 1 else '',
-                        'cpf': partes[2] if len(partes) > 2 else '',
-                        'cidade': partes[3] if len(partes) > 3 else '',
-                        'orgao': partes[4] if len(partes) > 4 else '',
-                        'data': partes[5] if len(partes) > 5 else ''
+                        'id': partes if len(partes) > 0 else '',
+                        'nome': partes if len(partes) > 1 else '',
+                        'cpf': partes if len(partes) > 2 else '',
+                        'cidade': partes if len(partes) > 3 else '',
+                        'orgao': partes if len(partes) > 4 else '',
+                        'data': partes if len(partes) > 5 else ''
                     })
     else:
         current_record = {}
@@ -288,7 +287,7 @@ def processar_dataframe_importado(df):
     cols_map = {}
     cols_clean = [remover_acentos(str(c).lower().strip()) for c in df.columns]
     
-    # 1. ID / Mandado
+    # Mapping
     for orig, c in zip(df.columns, cols_clean):
         if any(k in c for k in ['no mandado', 'num_mandado', 'numero_mandado', 'n_mandado', 'no do mandado', 'numero do mandado']) or c in ['id', 'mandado', 'numero']:
             cols_map['id'] = orig
@@ -299,32 +298,27 @@ def processar_dataframe_importado(df):
                 cols_map['id'] = orig
                 break
 
-    # 2. Nome
     for orig, c in zip(df.columns, cols_clean):
         if 'nome' in c or 'procurado' in c or 'individuo' in c or 'pessoa' in c:
             cols_map['nome'] = orig
             break
 
-    # 3. CPF
     for orig, c in zip(df.columns, cols_clean):
         if 'cpf' in c:
             cols_map['cpf'] = orig
             break
 
-    # 4. Comarca / Cidade / Municipio
     for orig, c in zip(df.columns, cols_clean):
-        if 'comarca' in c or 'municipio' in c or 'cidade' in c:
+        if 'comarca' in c or 'municipio' in c or 'cidade' in c or 'jurisdicao' in c:
             cols_map['comarca'] = orig
             break
 
-    # 5. Órgão Expedidor
     for orig, c in zip(df.columns, cols_clean):
         if 'orgao' in c or 'expedidor' in c or 'vara' in c or 'juizado' in c:
             if cols_map.get('id') != orig:
                 cols_map['orgao'] = orig
                 break
 
-    # 6. Data
     for orig, c in zip(df.columns, cols_clean):
         if 'data' in c or 'expedicao' in c or 'datahora' in c:
             cols_map['data'] = orig
@@ -513,7 +507,12 @@ with aba1:
     st.subheader(f"Mandados Expedidos na Região ({len(mandados_filtrados)})")
     
     if not mandados_filtrados:
-        st.info("Nenhum mandado localizado para os municípios selecionados nos filtros da barra lateral.")
+        qtd_fora = len(mandados_validos_45d) - len(mandados_filtrados)
+        if qtd_fora > 0:
+            st.warning(f"⚠️ Existem **{qtd_fora} mandado(s) ativo(s)** nos últimos 45 dias salvos no banco de dados, mas eles pertencem a municípios fora dos filtros atualmente selecionados.")
+            st.info("💡 **Como visualizar:** Na barra lateral à esquerda, em **'1️⃣ Selecionar Companhia(s)'**, marque a opção **'Outras Comarcas (Paraná)'** para exibir os mandados do restante do estado.")
+        else:
+            st.info("Nenhum mandado localizado no banco de dados.")
     else:
         for m in mandados_filtrados:
             st.markdown(f"""
