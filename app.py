@@ -1,9 +1,11 @@
-import streamlit as st
-import pandas as pd
 import datetime
 import json
 import os
 import re
+import io
+import unicodedata
+import pandas as pd
+import streamlit as st
 
 # Configuração da página no Streamlit
 st.set_page_config(
@@ -91,25 +93,29 @@ ESTRUTURA_COMPANHIAS = {
 
 ARQUIVO_DADOS = "mandados.json"
 
+def remover_acentos(texto):
+    if not texto:
+        return ""
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto)) if unicodedata.category(c) != "Mn")
+
 # Tabela de normalização para evitar divergências de caixa e acentuação
 MAPA_NORMALIZACAO = {}
 for cia_key, cidades_list in ESTRUTURA_COMPANHIAS.items():
     for c in cidades_list:
         MAPA_NORMALIZACAO[c.lower()] = c
-        c_sem_acento = c.lower().replace('á','a').replace('ã','a').replace('â','a').replace('é','e').replace('ê','e').replace('í','i').replace('ó','o').replace('ô','o').replace('ú','u').replace('ç','c')
-        MAPA_NORMALIZACAO[c_sem_acento] = c
+        MAPA_NORMALIZACAO[remover_acentos(c.lower())] = c
         cap_js = " ".join([w.capitalize() for w in c.split(" ")])
         MAPA_NORMALIZACAO[cap_js.lower()] = c
 
 def normalizar_cidade(nome_raw):
-    if not nome_raw:
+    if not nome_raw or pd.isna(nome_raw):
         return "Outras Comarcas (Paraná)"
     raw = str(nome_raw).strip()
-    raw_lower = raw.lower()
-    if raw_lower in MAPA_NORMALIZACAO:
-        return MAPA_NORMALIZACAO[raw_lower]
+    raw_clean = remover_acentos(raw.lower())
+    if raw_clean in MAPA_NORMALIZACAO:
+        return MAPA_NORMALIZACAO[raw_clean]
     for key, oficial in MAPA_NORMALIZACAO.items():
-        if key in raw_lower:
+        if key in raw_clean:
             return oficial
     return raw
 
@@ -275,38 +281,70 @@ def processar_texto_importado(texto_bruto):
         return len(novos_mandados)
     return 0
 
-def processar_dataframe_csv(df):
-    agora = datetime.datetime.now()
-    novos_mandados = []
+def processar_dataframe_importado(df):
+    if df is None or df.empty:
+        return 0
+        
+    cols_map = {}
+    cols_clean = [remover_acentos(str(c).lower().strip()) for c in df.columns]
     
-    col_map = {}
-    for col in df.columns:
-        c_lower = str(col).lower().strip()
-        if any(k in c_lower for k in ['id', 'mandado', 'numero', 'nº', 'peca']):
-            col_map['id'] = col
-        elif any(k in c_lower for k in ['nome', 'procurado', 'reu', 'indivíduo', 'individuo']):
-            col_map['nome'] = col
-        elif 'cpf' in c_lower:
-            col_map['cpf'] = col
-        elif any(k in c_lower for k in ['comarca', 'cidade', 'municipio', 'município']):
-            col_map['comarca'] = col
-        elif any(k in c_lower for k in ['orgao', 'órgão', 'vara', 'expedidor']):
-            col_map['orgao_expedidor'] = col
-        elif any(k in c_lower for k in ['data', 'expedicao', 'expedição', 'datahora']):
-            col_map['expedicao_datahora'] = col
+    # 1. ID / Mandado
+    for orig, c in zip(df.columns, cols_clean):
+        if any(k in c for k in ['no mandado', 'num_mandado', 'numero_mandado', 'n_mandado', 'no do mandado', 'numero do mandado']) or c in ['id', 'mandado', 'numero']:
+            cols_map['id'] = orig
+            break
+    if 'id' not in cols_map:
+        for orig, c in zip(df.columns, cols_clean):
+            if 'mandado' in c or 'id' in c:
+                cols_map['id'] = orig
+                break
 
+    # 2. Nome
+    for orig, c in zip(df.columns, cols_clean):
+        if 'nome' in c or 'procurado' in c or 'individuo' in c or 'pessoa' in c:
+            cols_map['nome'] = orig
+            break
+
+    # 3. CPF
+    for orig, c in zip(df.columns, cols_clean):
+        if 'cpf' in c:
+            cols_map['cpf'] = orig
+            break
+
+    # 4. Comarca / Cidade / Municipio
+    for orig, c in zip(df.columns, cols_clean):
+        if 'comarca' in c or 'municipio' in c or 'cidade' in c:
+            cols_map['comarca'] = orig
+            break
+
+    # 5. Órgão Expedidor
+    for orig, c in zip(df.columns, cols_clean):
+        if 'orgao' in c or 'expedidor' in c or 'vara' in c or 'juizado' in c:
+            if cols_map.get('id') != orig:
+                cols_map['orgao'] = orig
+                break
+
+    # 6. Data
+    for orig, c in zip(df.columns, cols_clean):
+        if 'data' in c or 'expedicao' in c or 'datahora' in c:
+            cols_map['data'] = orig
+            break
+
+    novos_mandados = []
+    agora = datetime.datetime.now()
+    
     for idx, row in df.iterrows():
-        mandado_id = str(row.get(col_map.get('id', ''), '')).strip()
-        if not mandado_id or mandado_id.lower() == 'nan':
+        mandado_id = str(row[cols_map['id']]).strip() if 'id' in cols_map and pd.notna(row[cols_map['id']]) else f"BNMP-2026-CSV-{idx+1}"
+        if not mandado_id or mandado_id == "nan":
             continue
             
-        nome = str(row.get(col_map.get('nome', ''), 'NÃO INFORMADO')).strip().upper()
-        cpf = str(row.get(col_map.get('cpf', ''), '000.***.***-00')).strip()
-        comarca_raw = str(row.get(col_map.get('comarca', ''), '')).strip()
-        orgao = str(row.get(col_map.get('orgao_expedidor', ''), 'Vara Criminal da Comarca')).strip()
-        expedicao = str(row.get(col_map.get('expedicao_datahora', ''), agora.strftime("%d/%m/%Y %H:%M:%S"))).strip()
+        nome = str(row[cols_map['nome']]).strip().upper() if 'nome' in cols_map and pd.notna(row[cols_map['nome']]) else "NÃO INFORMADO"
+        cpf = str(row[cols_map['cpf']]).strip() if 'cpf' in cols_map and pd.notna(row[cols_map['cpf']]) else "000.***.***-00"
+        cidade_raw = str(row[cols_map['comarca']]).strip() if 'comarca' in cols_map and pd.notna(row[cols_map['comarca']]) else "Outras Comarcas (Paraná)"
+        orgao = str(row[cols_map['orgao']]).strip() if 'orgao' in cols_map and pd.notna(row[cols_map['orgao']]) else "Vara Criminal da Comarca"
+        expedicao = str(row[cols_map['data']]).strip() if 'data' in cols_map and pd.notna(row[cols_map['data']]) else agora.strftime("%d/%m/%Y %H:%M:%S")
 
-        cidade = normalizar_cidade(comarca_raw)
+        cidade = normalizar_cidade(cidade_raw)
         cia = identificar_companhia(cidade)
 
         try:
@@ -339,6 +377,41 @@ def processar_dataframe_csv(df):
         return len(novos_mandados)
     return 0
 
+def carregar_arquivo_upload(uploaded_file):
+    filename = uploaded_file.name.lower()
+    df = None
+    if filename.endswith('.xlsx') or filename.endswith('.xls'):
+        try:
+            df = pd.read_excel(uploaded_file)
+        except Exception as e:
+            st.error(f"Erro ao ler arquivo Excel: {e}")
+            return 0
+    else:
+        content_bytes = uploaded_file.getvalue()
+        try:
+            df = pd.read_csv(io.BytesIO(content_bytes), sep=None, engine='python', on_bad_lines='skip')
+        except Exception:
+            try:
+                df = pd.read_csv(io.BytesIO(content_bytes), sep=';', on_bad_lines='skip')
+            except Exception:
+                try:
+                    df = pd.read_csv(io.BytesIO(content_bytes), sep=',', on_bad_lines='skip')
+                except Exception:
+                    try:
+                        df = pd.read_csv(io.BytesIO(content_bytes), sep='|', on_bad_lines='skip')
+                    except Exception:
+                        df = None
+
+        if df is None or df.empty or len(df.columns) == 1:
+            try:
+                texto = content_bytes.decode('utf-8', errors='ignore')
+                return processar_texto_importado(texto)
+            except Exception as e:
+                st.error(f"Erro ao ler arquivo de texto/CSV: {e}")
+                return 0
+
+    return processar_dataframe_importado(df)
+
 # BARRA LATERAL (Sidebar)
 st.sidebar.title("🚨 Filtros PMPR")
 st.sidebar.markdown("**Monitor de Mandados BNMP 3.0**")
@@ -363,16 +436,29 @@ cidades_selecionadas = st.sidebar.multiselect(
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📥 Exportar Base Completa (CSV)")
-
-df_todos_mandados = pd.DataFrame(st.session_state.mandados)
-if not df_todos_mandados.empty:
-    csv_data = df_todos_mandados[['id', 'nome', 'cpf', 'comarca', 'companhia', 'orgao_expedidor', 'expedicao_datahora', 'situacao']].to_csv(index=False, encoding='utf-8-sig')
+if st.session_state.mandados:
+    df_exp = pd.DataFrame(st.session_state.mandados)
+    cols_export = ['id', 'nome', 'cpf', 'comarca', 'companhia', 'orgao_expedidor', 'expedicao_datahora', 'situacao']
+    cols_exist = [c for c in cols_export if c in df_exp.columns]
+    df_exp_final = df_exp[cols_exist].rename(columns={
+        'id': 'Nº Mandado',
+        'nome': 'Nome Procurado',
+        'cpf': 'CPF',
+        'comarca': 'Município/Comarca',
+        'companhia': 'Companhia PMPR',
+        'orgao_expedidor': 'Órgão Expedidor',
+        'expedicao_datahora': 'Data de Expedição',
+        'situacao': 'Situação'
+    })
+    csv_bytes = df_exp_final.to_csv(index=False, sep=';', encoding='utf-8-sig')
     st.sidebar.download_button(
         label="📥 Baixar Mandados em CSV",
-        data=csv_data,
-        file_name=f"mandados_parana_pmpr_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        data=csv_bytes,
+        file_name=f"mandados_pmpr_parana_{datetime.date.today().strftime('%Y%m%d')}.csv",
         mime="text/csv"
     )
+else:
+    st.sidebar.caption("Nenhum mandado salvo para exportação.")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚙️ Ações do Banco de Dados")
@@ -465,37 +551,30 @@ with aba1:
             st.markdown("<br>", unsafe_allow_html=True)
 
 with aba2:
-    st.subheader("🚀 Importação por Arquivo CSV / Excel ou Texto")
+    st.subheader("🚀 Importação dos Mandados Reais (CSV, Excel ou Bookmarklet)")
     
-    col_csv, col_texto = st.columns(2)
+    col_up, col_txt = st.columns(2)
     
-    with col_csv:
-        st.markdown("#### 📁 Opção A: Importar Arquivo CSV / Excel")
-        arquivo_upload = st.file_uploader("Selecione uma planilha (.csv ou .xlsx):", type=['csv', 'xlsx'])
-        if arquivo_upload is not None:
-            try:
-                if arquivo_upload.name.endswith('.csv'):
-                    df_up = pd.read_csv(arquivo_upload)
-                else:
-                    df_up = pd.read_excel(arquivo_upload)
-                
-                qtd_csv = processar_dataframe_csv(df_up)
-                if qtd_csv > 0:
-                    st.success(f"✅ {qtd_csv} novo(s) mandado(s) importado(s) a partir do arquivo CSV/Excel!")
+    with col_up:
+        st.markdown("#### 📄 Opção A: Importar Arquivo CSV / Excel")
+        file_up = st.file_uploader("Selecione o arquivo (.csv, .xlsx):", type=['csv', 'xlsx', 'xls', 'txt'])
+        if file_up is not None:
+            if st.button("📥 Processar Arquivo Carregado", type="primary"):
+                qtd = carregar_arquivo_upload(file_up)
+                if qtd > 0:
+                    st.success(f"✅ {qtd} novo(s) mandado(s) importado(s) do arquivo com sucesso!")
                     recarregar_app()
                 else:
-                    st.info("Nenhum mandado novo foi adicionado do arquivo (ou já existiam no banco).")
-            except Exception as err:
-                st.error(f"Erro ao ler arquivo: {err}")
-                
-    with col_texto:
-        st.markdown("#### 📝 Opção B: Cole o Texto (Bookmarklet ou Tela BNMP)")
-        texto_input = st.text_area("Texto dos Mandados Capturados:", height=180, placeholder="Cole aqui o texto copiado pelo Bookmarklet ou selecionado na tela do BNMP...")
-        if st.button("📥 Processar e Salvar Texto", type="primary"):
+                    st.warning("Nenhum mandado novo foi adicionado (ou todos já constam no banco).")
+                    
+    with col_txt:
+        st.markdown("#### 📋 Opção B: Cole o Texto (Bookmarklet / Copia Direta)")
+        texto_input = st.text_area("Cole aqui o texto capturado do BNMP 3.0:", height=180, placeholder="Cole aqui os dados capturados...")
+        if st.button("📥 Processar Texto Colado"):
             if texto_input.strip():
                 qtd = processar_texto_importado(texto_input)
                 if qtd > 0:
-                    st.success(f"✅ {qtd} novo(s) mandado(s) real(is) importado(s) e salvo(s) com sucesso!")
+                    st.success(f"✅ {qtd} novo(s) mandado(s) importado(s) com sucesso!")
                     recarregar_app()
                 else:
                     st.warning("Nenhum mandado novo foi adicionado.")
