@@ -83,7 +83,7 @@ ESTRUTURA_COMPANHIAS = {
         "Santo Antônio do Paraíso", "São Jerônimo da Serra", "Santa Cecília do Pavão", "Nova Santa Bárbara"
     ],
     "Outras Comarcas (Paraná)": [
-        "Londrina", "Maringá", "Curitiba", "Ponta Grossa", "Jacarezinho", "Santo Antônio da Platina"
+        "Londrina", "Maringá", "Curitiba", "Ponta Grossa", "Jacarezinho", "Santo Antônio da Platina", "Cascavel", "Foz do Iguaçu", "Guarapuava", "Toledo"
     ]
 }
 
@@ -93,7 +93,7 @@ def identificar_companhia(cidade_nome):
     cidade_clean = str(cidade_nome).strip().lower()
     for cia, cidades in ESTRUTURA_COMPANHIAS.items():
         for c in cidades:
-            if c.lower() in cidade_clean or cidade_clean in c.lower():
+            if c.lower() == cidade_clean or c.lower() in cidade_clean or cidade_clean in c.lower():
                 return cia
     return "Outras Comarcas (Paraná)"
 
@@ -149,18 +149,20 @@ def processar_texto_importado(texto_bruto):
     novos_mandados = []
     agora = datetime.datetime.now()
     
-    todas_cidades_conhecidas = [c for c_list in ESTRUTURA_COMPANHIAS.values() for c in c_list]
-    
+    todas_cidades = []
+    for c_list in ESTRUTURA_COMPANHIAS.values():
+        todas_cidades.extend(c_list)
+        
     for linha in linhas:
         partes = [str(p.strip()) for p in linha.split('|')]
         
         if len(partes) >= 4:
-            mandado_id = str(partes[0])
-            nome = str(partes[1]) if len(partes) > 1 else "NÃO INFORMADO"
-            cpf = str(partes[2]) if len(partes) > 2 else "000.***.***-00"
-            cidade = str(partes[3]) if len(partes) > 3 else "Outras Comarcas (Paraná)"
-            orgao = str(partes[4]) if len(partes) > 4 else "Vara Criminal da Comarca"
-            expedicao = str(partes[5]) if len(partes) > 5 else agora.strftime("%d/%m/%Y %H:%M:%S")
+            mandado_id = partes[0] if len(partes) > 0 and partes[0] else f"BNMP-2026-{len(st.session_state.mandados)+len(novos_mandados)+1001}"
+            nome = partes[1] if len(partes) > 1 and partes[1] else "NÃO INFORMADO"
+            cpf = partes[2] if len(partes) > 2 and partes[2] else "000.***.***-00"
+            cidade = partes[3] if len(partes) > 3 and partes[3] else "Outras Comarcas (Paraná)"
+            orgao = partes[4] if len(partes) > 4 and partes[4] else "Vara Criminal da Comarca"
+            expedicao = partes[5] if len(partes) > 5 and partes[5] else agora.strftime("%d/%m/%Y %H:%M:%S")
         else:
             id_match = re.search(r'([A-Z0-9\.\-\/]+(?:BNMP|\d{4}-\d+|\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}))', linha)
             cpf_match = re.search(r'(\d{3}\.[\*\d]{3}\.[\*\d]{3}-\d{2})', linha)
@@ -171,7 +173,7 @@ def processar_texto_importado(texto_bruto):
             expedicao = str(data_match.group(1)) if data_match else agora.strftime("%d/%m/%Y %H:%M:%S")
             
             cidade = "Outras Comarcas (Paraná)"
-            for c in todas_cidades_conhecidas:
+            for c in todas_cidades:
                 if c.lower() in linha.lower():
                     cidade = c
                     break
@@ -308,7 +310,7 @@ with aba1:
             </div>
             """, unsafe_allow_html=True)
             
-            col_link, col_info = st.columns([4, 6])
+            col_link, col_info = st.columns()
             with col_link:
                 st.markdown(f"""
                 <a href="https://portalbnmp.cnj.jus.br/#/pesquisa-peca" target="_blank" style="text-decoration:none;">
@@ -325,7 +327,7 @@ with aba2:
     st.subheader("🚀 Importação Automática dos Mandados Reais do BNMP")
     st.write("Cole aqui o texto copiado pelo botão **`🚀 Enviar Mandados PMPR`** (Bookmarklet do navegador) ou de arquivos planilhados:")
     
-    texto_input = st.text_area("Texto dos Mandados Capturados:", height=200, placeholder="BNMP-2026-010420 | CARLOS EDUARDO SOUZA | 088.***.***-12 | Cornélio Procópio | Vara Criminal | 03/11/2026 08:30:00")
+    texto_input = st.text_area("Texto dos Mandados Capturados:", height=200, placeholder="BNMP-2026-010420 | CARLOS EDUARDO SOUZA | 088.***.***-12 | Assaí | Vara Criminal de Assaí | 03/11/2026 08:30:00")
     
     if st.button("📥 Processar e Salvar no App", type="primary"):
         if texto_input.strip():
@@ -349,5 +351,5 @@ with aba3:
         with col_g2:
             st.markdown("#### Mandados por Município")
             st.bar_chart(df_mandados['comarca'].value_counts())
-    else:
+            else:
         st.write("Nenhum dado disponível para estatísticas.")
