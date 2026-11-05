@@ -322,12 +322,12 @@ def processar_texto_importado(texto_bruto):
                 partes = [p.strip() for p in l.split('|')]
                 if len(partes) >= 2:
                     blocos_dados.append({
-                        'id': partes[0] if len(partes) > 0 else '',
-                        'nome': partes[1] if len(partes) > 1 else '',
-                        'cpf': partes[2] if len(partes) > 2 else '',
-                        'cidade': partes[3] if len(partes) > 3 else '',
-                        'orgao': partes[4] if len(partes) > 4 else '',
-                        'data': partes[5] if len(partes) > 5 else ''
+                        'id': partes if len(partes) > 0 else '',
+                        'nome': partes if len(partes) > 1 else '',
+                        'cpf': partes if len(partes) > 2 else '',
+                        'cidade': partes if len(partes) > 3 else '',
+                        'orgao': partes if len(partes) > 4 else '',
+                        'data': partes if len(partes) > 5 else ''
                     })
     else:
         current_record = {}
@@ -519,6 +519,9 @@ def carregar_arquivo_upload(uploaded_file):
     return processar_dataframe_importado(df)
 
 # BARRA LATERAL (Sidebar)
+if st.sidebar.button("🔄 Atualizar / Recarregar Site", type="primary", use_container_width=True):
+    recarregar_app()
+
 st.sidebar.title("🚨 Filtros PMPR")
 st.sidebar.markdown("**Monitor de Mandados BNMP 3.0**")
 
@@ -674,7 +677,13 @@ if busca:
 
 mandados_filtrados = sorted(mandados_filtrados, key=lambda x: x.get('timestamp', 0.0), reverse=True)
 
-aba1, aba2, aba3 = st.tabs(["📋 Mandados Expedidos", "🚀 Importar CSV / Bookmarklet / Texto", "📊 Estatísticas"])
+# Abas da Aplicação
+aba1, aba2, aba3, aba4 = st.tabs([
+    "📋 Mandados Expedidos", 
+    "🚀 Importar CSV / Bookmarklet / Texto", 
+    "📖 Tutorial de Uso", 
+    "📊 Estatísticas"
+])
 
 with aba1:
     st.subheader(f"Mandados Expedidos na Região ({len(mandados_filtrados)})")
@@ -754,6 +763,61 @@ with aba2:
                 st.error("Por favor, cole os dados antes de clicar em processar.")
 
 with aba3:
+    st.subheader("📖 Guia Passo a Passo: Como Operar o Monitor de Mandados")
+    st.markdown("""
+    Este guia prático descreve o procedimento operacional padrão para alimentação diária e consulta de mandados no sistema.
+    """)
+    
+    st.markdown("""
+    <div style="background-color: #EFF6FF; border-left: 5px solid #2563EB; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h4 style="color: #1E40AF; margin-top: 0;">💡 Passo 1: Pesquisa Unificada no Portal BNMP 3.0 (CNJ)</h4>
+        <ol style="color: #1E293B; font-size: 15px; line-height: 1.6;">
+            <li>Acesse o <b>Portal BNMP 3.0</b> do Conselho Nacional de Justiça.</li>
+            <li>No formulário de pesquisa, selecione o Estado: <b>Paraná (PR)</b>.</li>
+            <li><b>Atenção:</b> Deixe o campo <i>Comarca / Órgão Julgador</i> totalmente em <b>BRANCO</b> (não selecione nenhuma comarca individual).</li>
+        </ol>
+        <div style="background-color: #DBEAFE; color: #1E3A8A; padding: 10px; border-radius: 6px; font-weight: bold; font-size: 14px;">
+            📌 REGRA DE OURO: O único preenchimento necessário no BNMP é selecionar a UF Paraná (PR).
+        </div>
+        <br>
+        <ol start="4" style="color: #1E293B; font-size: 15px; line-height: 1.6;">
+            <li>Resolva a validação do CAPTCHA na tela.</li>
+            <li>Clique no botão de consulta e, em seguida, faça o download da planilha no formato <b>CSV Geral</b>.</li>
+        </ol>
+    </div>
+
+    <div style="background-color: #F0FDF4; border-left: 5px solid #16A34A; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h4 style="color: #166534; margin-top: 0;">🚀 Passo 2: Alimentação e Triagem Automática no Site</h4>
+        <ol style="color: #1E293B; font-size: 15px; line-height: 1.6;">
+            <li>Com o arquivo baixado, retorne a este sistema e acesse a aba <b>"🚀 Importar CSV / Bookmarklet / Texto"</b>.</li>
+            <li>Faça o upload do arquivo CSV na área indicada e confirme o processamento.</li>
+        </ol>
+        <div style="background-color: #DCFCE7; color: #14532D; padding: 10px; border-radius: 6px; font-weight: bold; font-size: 14px;">
+            ⚡ Triagem Inteligente: O algoritmo varre a planilha do Estado inteiro e filtra automaticamente apenas as ordens judiciais vigentes das 7 Comarcas Sedes, cobrindo todos os 20 municípios de responsabilidade do 18º BPM (1ª, 2ª e 3ª Companhias)!
+        </div>
+    </div>
+
+    <div style="background-color: #FEFCE8; border-left: 5px solid #CA8A04; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h4 style="color: #854D0E; margin-top: 0;">📄 Passo 3: Consulta do Indivíduo e Download do PDF Oficial</h4>
+        <ol style="color: #1E293B; font-size: 15px; line-height: 1.6;">
+            <li>Na aba <b>"📋 Mandados Expedidos"</b>, localize o mandado do indivíduo desejado.</li>
+            <li><b>Copie o número do mandado</b> exibido em destaque na caixa amarela.</li>
+            <li>Clique no botão azul <b>"🔗 Abrir PDF / Consultar no BNMP 3.0 (CNJ)"</b> para ir à página oficial do tribunal.</li>
+            <li>No portal do CNJ, cole o número no campo de pesquisa, resolva o CAPTCHA e faça o download do documento PDF assinado digitalmente pelo magistrado.</li>
+        </ol>
+    </div>
+
+    <div style="background-color: #FEF2F2; border-left: 5px solid #DC2626; padding: 15px; border-radius: 8px;">
+        <h4 style="color: #991B1B; margin-top: 0;">🛡️ Impacto Operacional para o Patrulhamento</h4>
+        <p style="color: #7F1D1D; font-size: 14px; line-height: 1.5; margin-bottom: 0;">
+            Este mecanismo otimiza o trabalho da equipe policial. Em vez de realizar pesquisas individuais comarca por comarca, basta fazer uma única exportação estadual por turno. O aplicativo realiza a filtragem geográfica instantânea e apresenta os dados organizados por Companhia e Município.
+            <br><br>
+            <b>Nota:</b> Para manter o banco sempre atualizado com as últimas expedições do Poder Judiciário, recomenda-se realizar este procedimento de alimentação no início de cada serviço operacional.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with aba4:
     st.subheader("📊 Estatísticas Operacionais da Região")
     if mandados_filtrados:
         df_mandados = pd.DataFrame(mandados_filtrados)
