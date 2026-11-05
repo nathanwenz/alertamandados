@@ -78,22 +78,24 @@ st.markdown("""
     /* Marca d'água de desenvolvimento no canto inferior direito */
     .watermark-dev {
         position: fixed;
-        bottom: 12px;
-        right: 130px;
+        bottom: 15px;
+        right: 210px;
         font-size: 11px;
         font-weight: bold;
         color: #475569;
         background-color: rgba(255, 255, 255, 0.95);
         border: 1px solid #CBD5E1;
-        padding: 4px 10px;
+        padding: 5px 12px;
         border-radius: 6px;
         z-index: 999999;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         pointer-events: none;
+        text-align: center;
+        line-height: 1.3;
     }
 </style>
 
-<div class="watermark-dev">Dev: Nathan Wenzel</div>
+<div class="watermark-dev">Developer;<br>Nathan Wenzel</div>
 """, unsafe_allow_html=True)
 
 # Estrutura Organizacional Hierárquica da PMPR (Companhia -> Comarcas Sedes -> Municípios)
