@@ -1,11 +1,11 @@
-import streamlit as st
-import pandas as pd
 import datetime
 import json
 import os
 import re
 import io
 import unicodedata
+import pandas as pd
+import streamlit as st
 
 # Configuração da página no Streamlit
 st.set_page_config(
@@ -119,13 +119,6 @@ for cia_key, comarcas_dict in ESTRUTURA_COMPANHIAS.items():
                 MAPA_MUNICIPIO_PARA_COMARCA[c] = comarca_key
                 MAPA_MUNICIPIO_PARA_COMARCA[c.lower()] = comarca_key
                 MAPA_MUNICIPIO_PARA_COMARCA[c_clean] = comarca_key
-    elif isinstance(comarcas_dict, list):
-        for c in comarcas_dict:
-            c_clean = remover_acentos(c.lower())
-            MAPA_NORMALIZACAO_MUNICIPIOS[c.lower()] = c
-            MAPA_NORMALIZACAO_MUNICIPIOS[c_clean] = c
-            MAPA_MUNICIPIO_PARA_COMARCA[c] = c
-            MAPA_COMARCA_PARA_CIA[c] = cia_key
 
 def normalizar_municipio(nome_raw):
     if not nome_raw or pd.isna(nome_raw):
@@ -145,19 +138,61 @@ def identificar_comarca_e_cia(texto_mencionado):
     
     txt_clean = remover_acentos(str(texto_mencionado).lower())
     
-    # 1. Tentar localizar o município específico primeiro no texto
     for m_key, m_oficial in MAPA_NORMALIZACAO_MUNICIPIOS.items():
         if re.search(r'\b' + re.escape(m_key) + r'\b', txt_clean):
             comarca = MAPA_MUNICIPIO_PARA_COMARCA.get(m_oficial, "Outras Comarcas")
             cia = MAPA_COMARCA_PARA_CIA.get(comarca, "Outras Comarcas (Paraná)")
             return m_oficial, cia
 
-    # 2. Tentar localizar a Comarca Sede no texto
     for com_key, cia_val in MAPA_COMARCA_PARA_CIA.items():
         if re.search(r'\b' + re.escape(remover_acentos(com_key.lower())) + r'\b', txt_clean):
             return com_key, cia_val
 
     return "Outras Comarcas", "Outras Comarcas (Paraná)"
+
+def parse_data_expedicao(val_raw):
+    if pd.isna(val_raw) or not val_raw or str(val_raw).strip() == "" or str(val_raw).strip().lower() in ['nan', 'none', 'null', 'nat']:
+        return None, None
+    
+    val_str = str(val_raw).strip()
+    # Strip CNJ process numbers to avoid false regex matches on case numbers like .2026.8.16.
+    val_clean = re.sub(r'\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}', '', val_str)
+    
+    # 1. Match DD/MM/YYYY [HH:MM[:SS]]
+    match_br = re.search(r'\b(\d{2})[/.-](\d{2})[/.-](\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?\b', val_clean)
+    if match_br:
+        dia, mes, ano = match_br.group(1), match_br.group(2), match_br.group(3)
+        h = match_br.group(4) or "00"
+        m = match_br.group(5) or "00"
+        s = match_br.group(6) or "00"
+        try:
+            dt = datetime.datetime(int(ano), int(mes), int(dia), int(h), int(m), int(s))
+            return dt.strftime("%d/%m/%Y %H:%M:%S"), float(dt.timestamp())
+        except Exception:
+            pass
+
+    # 2. Match YYYY-MM-DD [HH:MM[:SS]]
+    match_iso = re.search(r'\b(\d{4})[/.-](\d{2})[/.-](\d{2})(?:[T\s]+(\d{2}):(\d{2})(?::(\d{2}))?)?\b', val_clean)
+    if match_iso:
+        ano, mes, dia = match_iso.group(1), match_iso.group(2), match_iso.group(3)
+        h = match_iso.group(4) or "00"
+        m = match_iso.group(5) or "00"
+        s = match_iso.group(6) or "00"
+        try:
+            dt = datetime.datetime(int(ano), int(mes), int(dia), int(h), int(m), int(s))
+            return dt.strftime("%d/%m/%Y %H:%M:%S"), float(dt.timestamp())
+        except Exception:
+            pass
+
+    # 3. Pandas fallback
+    try:
+        dt = pd.to_datetime(val_clean, dayfirst=True, errors='coerce')
+        if pd.notna(dt):
+            return dt.strftime("%d/%m/%Y %H:%M:%S"), float(dt.timestamp())
+    except Exception:
+        pass
+
+    return None, None
 
 def carregar_mandados_salvos():
     if os.path.exists(ARQUIVO_DADOS):
@@ -244,7 +279,7 @@ def processar_texto_importado(texto_bruto):
         for l in linhas:
             id_match = re.search(r'([A-Z0-9\.\-\/]{10,}(?:BNMP|\d{4}-\d+|\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}))', l, re.IGNORECASE)
             cpf_match = re.search(r'(\d{3}\.[\*\d]{3}\.[\*\d]{3}-\d{2})', l)
-            data_match = re.search(r'(\d{2}/\d{2}/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)', l)
+            data_str_found, ts_found = parse_data_expedicao(l)
             
             if id_match and 'id' in current_record:
                 blocos_dados.append(current_record)
@@ -256,8 +291,9 @@ def processar_texto_importado(texto_bruto):
             if cpf_match:
                 current_record['cpf'] = cpf_match.group(1)
                 
-            if data_match:
-                current_record['data'] = data_match.group(1)
+            if data_str_found and 'data' not in current_record:
+                current_record['data'] = data_str_found
+                current_record['ts'] = ts_found
                 
             c_detectada, cia_detectada = identificar_comarca_e_cia(l)
             if c_detectada != "Outras Comarcas" and 'cidade' not in current_record:
@@ -266,7 +302,7 @@ def processar_texto_importado(texto_bruto):
             if ('vara' in l.lower() or 'juizado' in l.lower() or 'comarca' in l.lower() or 'tribunal' in l.lower() or 'tjpr' in l.lower()) and 'orgao' not in current_record:
                 current_record['orgao'] = l
                 
-            if 'nome' not in current_record and not id_match and not cpf_match and not data_match:
+            if 'nome' not in current_record and not id_match and not cpf_match and not data_str_found:
                 if l == l.upper() and len(l.split()) >= 2 and not any(kw in l.lower() for kw in ['mandado', 'prisão', 'peça', 'órgão', 'expedidor', 'município', 'situação', 'pendente', 'tribunal', 'vara']):
                     current_record['nome'] = l
 
@@ -281,7 +317,6 @@ def processar_texto_importado(texto_bruto):
         nome = str(b.get('nome', '')).strip() or "NÃO INFORMADO"
         cpf = str(b.get('cpf', '')).strip() or "000.***.***-00"
         orgao = str(b.get('orgao', '')).strip() or "Vara Criminal da Comarca"
-        expedicao = str(b.get('data', '')).strip() or agora.strftime("%d/%m/%Y %H:%M:%S")
         
         cidade_bruta = b.get('cidade', '')
         cidade, cia = identificar_comarca_e_cia(orgao + " " + cidade_bruta)
@@ -289,14 +324,11 @@ def processar_texto_importado(texto_bruto):
             cidade = normalizar_municipio(cidade_bruta)
             cia = MAPA_COMARCA_PARA_CIA.get(MAPA_MUNICIPIO_PARA_COMARCA.get(cidade, "Outras Comarcas"), "Outras Comarcas (Paraná)")
         
-        try:
-            if ":" in expedicao:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y %H:%M:%S")
-            else:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
-            ts = float(dt.timestamp())
-        except Exception:
-            ts = float(agora.timestamp())
+        data_raw = b.get('data', '')
+        fmt_dt, ts_dt = parse_data_expedicao(data_raw)
+        if not fmt_dt:
+            fmt_dt = agora.strftime("%d/%m/%Y %H:%M:%S")
+            ts_dt = float(agora.timestamp())
 
         if not any(m['id'] == mandado_id for m in st.session_state.mandados) and not any(m['id'] == mandado_id for m in novos_mandados):
             item = {
@@ -306,8 +338,8 @@ def processar_texto_importado(texto_bruto):
                 "comarca": str(cidade),
                 "companhia": str(cia),
                 "orgao_expedidor": str(orgao),
-                "expedicao_datahora": str(expedicao),
-                "timestamp": float(ts),
+                "expedicao_datahora": str(fmt_dt),
+                "timestamp": float(ts_dt),
                 "situacao": "Pendente de Cumprimento",
                 "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
             }
@@ -318,6 +350,39 @@ def processar_texto_importado(texto_bruto):
         salvar_mandados_disco(st.session_state.mandados)
         return len(novos_mandados)
     return 0
+
+def encontrar_coluna_data(df):
+    cols = df.columns
+    cols_clean = [remover_acentos(str(c).lower().strip()) for c in cols]
+    
+    keywords_p1 = [
+        'dataexpedicao', 'data_expedicao', 'dt_expedicao', 'data expedicao',
+        'data de expedicao', 'data da peca', 'data peca', 'data_peca',
+        'emissao', 'data_emissao', 'data emissao', 'data de emissao',
+        'dt_emissao', 'data_mandado', 'data mandado', 'data_assinatura',
+        'datahora', 'data_hora', 'dt_exp', 'dataexpedicaopeca'
+    ]
+    for orig, c in zip(cols, cols_clean):
+        c_no_space = c.replace(' ', '').replace('_', '').replace('/', '')
+        for kw in keywords_p1:
+            kw_no_space = kw.replace(' ', '').replace('_', '').replace('/', '')
+            if kw_no_space in c_no_space:
+                return orig
+                
+    for orig, c in zip(cols, cols_clean):
+        if ('data' in c or 'date' in c or 'dt' in c) and not any(neg in c for neg in ['nasc', 'valida', 'cumpr', 'revog', 'extin', 'nacional', 'atualiza']):
+            return orig
+
+    for orig in cols:
+        sample_vals = df[orig].dropna().astype(str).head(10)
+        match_count = 0
+        for val in sample_vals:
+            if re.search(r'\d{2}[/.-]\d{2}[/.-]\d{4}', val) or re.search(r'\d{4}[/.-]\d{2}[/.-]\d{2}', val):
+                match_count += 1
+        if match_count >= len(sample_vals) * 0.5 and len(sample_vals) > 0:
+            return orig
+
+    return None
 
 def processar_dataframe_importado(df):
     if df is None or df.empty:
@@ -352,10 +417,9 @@ def processar_dataframe_importado(df):
                 cols_map['comarca'] = orig
                 break
 
-    for orig, c in zip(df.columns, cols_clean):
-        if 'data' in c or 'expedicao' in c or 'datahora' in c:
-            cols_map['data'] = orig
-            break
+    col_data_encontrada = encontrar_coluna_data(df)
+    if col_data_encontrada:
+        cols_map['data'] = col_data_encontrada
 
     novos_mandados = []
     agora = datetime.datetime.now()
@@ -369,21 +433,17 @@ def processar_dataframe_importado(df):
         cpf = str(row[cols_map['cpf']]).strip() if 'cpf' in cols_map and pd.notna(row[cols_map['cpf']]) else "000.***.***-00"
         orgao = str(row[cols_map['orgao']]).strip() if 'orgao' in cols_map and pd.notna(row[cols_map['orgao']]) else "Vara Criminal da Comarca"
         cidade_raw = str(row[cols_map['comarca']]).strip() if 'comarca' in cols_map and pd.notna(row[cols_map['comarca']]) else ""
-        expedicao = str(row[cols_map['data']]).strip() if 'data' in cols_map and pd.notna(row[cols_map['data']]) else agora.strftime("%d/%m/%Y %H:%M:%S")
+        
+        val_data_cell = row[cols_map['data']] if 'data' in cols_map and pd.notna(row[cols_map['data']]) else None
+        fmt_dt, ts_dt = parse_data_expedicao(val_data_cell)
+        if not fmt_dt:
+            fmt_dt = agora.strftime("%d/%m/%Y %H:%M:%S")
+            ts_dt = float(agora.timestamp())
 
         cidade, cia = identificar_comarca_e_cia(orgao + " " + cidade_raw)
         if cidade == "Outras Comarcas":
             cidade = normalizar_municipio(cidade_raw)
             cia = MAPA_COMARCA_PARA_CIA.get(MAPA_MUNICIPIO_PARA_COMARCA.get(cidade, "Outras Comarcas"), "Outras Comarcas (Paraná)")
-
-        try:
-            if ":" in expedicao:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y %H:%M:%S")
-            else:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
-            ts = float(dt.timestamp())
-        except Exception:
-            ts = float(agora.timestamp())
 
         if not any(m['id'] == mandado_id for m in st.session_state.mandados) and not any(m['id'] == mandado_id for m in novos_mandados):
             item = {
@@ -393,8 +453,8 @@ def processar_dataframe_importado(df):
                 "comarca": str(cidade),
                 "companhia": str(cia),
                 "orgao_expedidor": str(orgao),
-                "expedicao_datahora": str(expedicao),
-                "timestamp": float(ts),
+                "expedicao_datahora": str(fmt_dt),
+                "timestamp": float(ts_dt),
                 "situacao": "Pendente de Cumprimento",
                 "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
             }
@@ -438,7 +498,7 @@ def carregar_arquivo_upload(uploaded_file):
 
     return processar_dataframe_importado(df)
 
-# BARRA LATERAL (Sidebar) - PONTOS DE ERRO PREVENIDOS (Suporte a Dict e List)
+# BARRA LATERAL (Sidebar)
 st.sidebar.title("🚨 Filtros PMPR")
 st.sidebar.markdown("**Monitor de Mandados BNMP 3.0**")
 
@@ -450,7 +510,7 @@ cias_selecionadas = st.sidebar.multiselect(
     default=cias_padrao
 )
 
-# Resolução ultra-segura do erro de `.keys()`
+# Resolução de Comarcas Sedes (Resiliente a dict e list)
 comarcas_disponiveis = []
 for cia in cias_selecionadas:
     estrutura_cia = st.session_state.estruturas.get(cia, {})
@@ -459,13 +519,15 @@ for cia in cias_selecionadas:
     elif isinstance(estrutura_cia, list):
         comarcas_disponiveis.extend(estrutura_cia)
 
+comarcas_disponiveis = sorted(list(set(comarcas_disponiveis)))
+
 comarcas_selecionadas = st.sidebar.multiselect(
     "2️⃣ Selecionar Comarca(s) Sede (Fórums):",
     options=comarcas_disponiveis,
     default=comarcas_disponiveis
 )
 
-# Resolução de Municípios
+# Resolução de Municípios Subordinados
 cidades_disponiveis = []
 for cia in cias_selecionadas:
     estrutura_cia = st.session_state.estruturas.get(cia, {})
