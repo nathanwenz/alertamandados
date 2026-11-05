@@ -4,7 +4,6 @@ import datetime
 import json
 import os
 import re
-import time
 
 # Configuração da página no Streamlit
 st.set_page_config(
@@ -27,41 +26,51 @@ st.markdown("""
     }
     .card-mandado {
         background-color: #F8FAFC;
-        border-left: 5px solid #2563EB;
-        padding: 15px;
+        border-left: 6px solid #1E40AF;
+        padding: 16px;
         border-radius: 8px;
         margin-bottom: 15px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
     }
     .badge-cidade {
         background-color: #DBEAFE;
         color: #1E40AF;
-        padding: 3px 8px;
+        padding: 4px 10px;
         border-radius: 12px;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: bold;
     }
     .badge-cia {
         background-color: #FEF3C7;
         color: #92400E;
-        padding: 3px 8px;
+        padding: 4px 10px;
         border-radius: 12px;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: bold;
         margin-right: 5px;
     }
     .badge-status {
         background-color: #FEE2E2;
         color: #991B1B;
-        padding: 3px 8px;
+        padding: 4px 10px;
         border-radius: 12px;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: bold;
+    }
+    .caixa-mandado {
+        background-color: #FEF9C3;
+        border: 1px solid #FDE047;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-family: monospace;
+        font-weight: bold;
+        color: #854D0E;
+        display: inline-block;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Estrutura Organizacional por Companhias (1ª CIA, 2ª CIA e 3ª CIA)
+# Estrutura Organizacional da PMPR (Companhias e Cidades)
 ESTRUTURA_COMPANHIAS = {
     "1ª CIA (Cornélio Procópio)": [
         "Cornélio Procópio", "Leópolis", "Nova Fátima", "Uraí", "Rancho Alegre", "Sertaneja"
@@ -72,14 +81,15 @@ ESTRUTURA_COMPANHIAS = {
     "3ª CIA (Assaí)": [
         "Assaí", "Nova América da Colina", "São Sebastião da Amoreira", "Congonhinhas",
         "Santo Antônio do Paraíso", "São Jerônimo da Serra", "Santa Cecília do Pavão", "Nova Santa Bárbara"
+    ],
+    "Outras Comarcas Regionais": [
+        "Londrina"
     ]
 }
 
-MANDADOS_FILE = "mandados.json"
+ARQUIVO_DADOS = "mandados.json"
 
 def identificar_companhia(cidade_nome):
-    if not cidade_nome:
-        return "1ª CIA (Cornélio Procópio)"
     cidade_clean = str(cidade_nome).strip().lower()
     for cia, cidades in ESTRUTURA_COMPANHIAS.items():
         for c in cidades:
@@ -87,32 +97,18 @@ def identificar_companhia(cidade_nome):
                 return cia
     return "1ª CIA (Cornélio Procópio)"
 
-def carregar_mandados():
-    if os.path.exists(MANDADOS_FILE):
+def carregar_mandados_salvos():
+    if os.path.exists(ARQUIVO_DADOS):
         try:
-            with open(MANDADOS_FILE, "r", encoding="utf-8") as f:
-                dados = json.load(f)
-                if isinstance(dados, list):
-                    for m in dados:
-                        if "expedicao_dt" not in m:
-                            try:
-                                m["expedicao_dt"] = datetime.datetime.strptime(m["expedicao_datahora"], "%d/%m/%Y %H:%M:%S")
-                            except Exception:
-                                m["expedicao_dt"] = datetime.datetime.now()
-                    return dados
+            with open(ARQUIVO_DADOS, "r", encoding="utf-8") as f:
+                return json.load(f)
         except Exception:
-            pass
+            return []
     return []
 
-def salvar_mandados_json(mandados):
-    serializable = []
-    for m in mandados:
-        m_copy = dict(m)
-        if "expedicao_dt" in m_copy:
-            del m_copy["expedicao_dt"]
-        serializable.append(m_copy)
-    with open(MANDADOS_FILE, "w", encoding="utf-8") as f:
-        json.dump(serializable, f, ensure_ascii=False, indent=2)
+def salvar_mandados_disco(lista_mandados):
+    with open(ARQUIVO_DADOS, "w", encoding="utf-8") as f:
+        json.dump(lista_mandados, f, ensure_ascii=False, indent=2)
 
 def recarregar_app():
     if hasattr(st, "rerun"):
@@ -120,24 +116,95 @@ def recarregar_app():
     elif hasattr(st, "experimental_rerun"):
         st.experimental_rerun()
 
-# Inicialização de Session State
-if "estruturas" not in st.session_state:
+# Inicialização do Session State
+if 'estruturas' not in st.session_state:
     st.session_state.estruturas = ESTRUTURA_COMPANHIAS
 
-if "mandados" not in st.session_state:
-    carregados = carregar_mandados()
-    st.session_state.mandados = carregados
+if 'mandados' not in st.session_state:
+    st.session_state.mandados = carregar_mandados_salvos()
+
+def processar_texto_importado(texto_bruto):
+    linhas = [l.strip() for l in texto_bruto.split('\n') if l.strip()]
+    novos_mandados = []
+    agora = datetime.datetime.now()
+    
+    for linha in linhas:
+        partes = [p.strip() for p in linha.split('|')]
+        
+        if len(partes) >= 4:
+            mandado_id = partes[0]
+            nome = partes[1] if len(partes) > 1 else "NÃO INFORMADO"
+            cpf = partes[2] if len(partes) > 2 else "000.***.***-00"
+            cidade = partes[3] if len(partes) > 3 else "Cornélio Procópio"
+            orgao = partes[4] if len(partes) > 4 else "Vara Criminal da Comarca"
+            expedicao = partes[5] if len(partes) > 5 else agora.strftime("%d/%m/%Y %H:%M:%S")
+        else:
+            # Tentar extrair por expressões regulares (regex)
+            id_match = re.search(r'([A-Z0-9\.\-\/]+(?:BNMP|\d{4}-\d+|\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}))', linha)
+            cpf_match = re.search(r'(\d{3}\.[\*\d]{3}\.[\*\d]{3}-\d{2})', linha)
+            data_match = re.search(r'(\d{2}/\d{2}/\d{4}(?:\s+\d{2}:\d{2}:\d{2})?)', linha)
+            
+            mandado_id = id_match.group(1) if id_match else f"BNMP-2026-{len(st.session_state.mandados)+1001}"
+            cpf = cpf_match.group(1) if cpf_match else "000.***.***-00"
+            expedicao = data_match.group(1) if data_match else agora.strftime("%d/%m/%Y %H:%M:%S")
+            
+            # Tentar extrair a cidade
+            cidade = "Cornélio Procópio"
+            for cia, c_list in ESTRUTURA_COMPANHIAS.items():
+                for c in c_list:
+                    if c.lower() in linha.lower():
+                        cidade = c
+                        break
+            
+            nome = "NÃO INFORMADO"
+            orgao = "Vara Criminal da Comarca"
+            
+        cia = identificar_companhia(cidade)
+        
+        # Calcular timestamp para ordenação
+        try:
+            if ":" in expedicao:
+                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y %H:%M:%S")
+            else:
+                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
+            ts = dt.timestamp()
+        except Exception:
+            ts = agora.timestamp()
+
+        # Evitar duplicados por ID
+        if not any(m['id'] == mandado_id for m in st.session_state.mandados):
+            item = {
+                "id": mandado_id,
+                "nome": nome.upper(),
+                "cpf": cpf,
+                "comarca": cidade,
+                "companhia": cia,
+                "orgao_expedidor": orgao,
+                "expedicao_datahora": expedicao,
+                "timestamp": ts,
+                "situacao": "Pendente de Cumprimento",
+                "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
+            }
+            novos_mandados.append(item)
+            
+    if novos_mandados:
+        st.session_state.mandados.extend(novos_mandados)
+        salvar_mandados_disco(st.session_state.mandados)
+        return len(novos_mandados)
+    return 0
 
 # BARRA LATERAL (Sidebar)
 st.sidebar.title("🚨 Filtros PMPR")
 st.sidebar.markdown("**Monitor de Mandados BNMP 3.0**")
 
+# Seleção de Companhias
 cias_selecionadas = st.sidebar.multiselect(
     "1️⃣ Selecionar Companhia(s):",
     options=list(st.session_state.estruturas.keys()),
     default=list(st.session_state.estruturas.keys())
 )
 
+# Cidades derivadas das Cias selecionadas
 cidades_disponiveis = []
 for cia in cias_selecionadas:
     cidades_disponiveis.extend(st.session_state.estruturas[cia])
@@ -148,243 +215,122 @@ cidades_selecionadas = st.sidebar.multiselect(
     default=cidades_disponiveis
 )
 
-with st.sidebar.expander("➕ Adicionar Cidade/Comarca"):
-    nova_cidade_input = st.text_input("Nome da Cidade:")
-    cia_destino = st.selectbox("Atribuir à Companhia:", options=list(st.session_state.estruturas.keys()))
-    if st.button("Salvar Cidade"):
-        if nova_cidade_input and nova_cidade_input not in st.session_state.estruturas[cia_destino]:
-            st.session_state.estruturas[cia_destino].append(nova_cidade_input.strip())
-            st.success(f"Cidade '{nova_cidade_input}' adicionada!")
-            recarregar_app()
-
 st.sidebar.markdown("---")
-st.sidebar.subheader("📲 WhatsApp de Destino")
-num_whatsapp = st.sidebar.text_input("Número Cadastrado (DDD + Número):", value="43999999999")
-
-st.sidebar.markdown("---")
+st.sidebar.subheader("⚙️ Ações do Banco de Dados")
 if st.sidebar.button("🗑️ Limpar Todos os Mandados Salvos"):
     st.session_state.mandados = []
-    salvar_mandados_json([])
-    st.sidebar.success("Base de mandados limpa!")
+    salvar_mandados_disco([])
+    st.sidebar.success("Base de dados limpa!")
     recarregar_app()
 
-# ÁREA PRINCIPAL
-st.markdown('<div class="titulo-principal">🚨 PMPR - Mandados de Prisão Ativos (Últimos 45 dias)</div>', unsafe_allow_html=True)
+# ÁREA PRINCIPAL (Dashboard)
+st.markdown('<div class="titulo-principal">🚨 PMPR - Sistema Regional de Mandados de Prisão (BNMP 3.0)</div>', unsafe_allow_html=True)
 
-# FILTRO DOS ÚLTIMOS 45 DIAS DE EXPEDIÇÃO JUDICIAL
-data_corte_45dias = datetime.datetime.now() - datetime.timedelta(days=45)
+# Métricas Operacionais
+c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+
+# Filtrar mandados ativos nos últimos 45 dias
+data_corte_45d = datetime.datetime.now() - datetime.timedelta(days=45)
+mandados_validos_45d = []
+for m in st.session_state.mandados:
+    ts = m.get('timestamp', 0)
+    if datetime.datetime.fromtimestamp(ts) >= data_corte_45d:
+        mandados_validos_45d.append(m)
 
 mandados_filtrados = [
-    m for m in st.session_state.mandados
-    if m.get('comarca') in cidades_selecionadas and m.get('expedicao_dt', datetime.datetime.now()) >= data_corte_45dias
+    m for m in mandados_validos_45d
+    if m['comarca'] in cidades_selecionadas
 ]
 
-c_m1, c_m2, c_m3, c_m4 = st.columns(4)
-c_m1.metric("Mandados Ativos (<= 45 dias)", len(mandados_filtrados))
-c_m2.metric("Cias Selecionadas", len(cias_selecionadas))
-c_m3.metric("Cidades Monitoradas", len(cidades_selecionadas))
+c_m1.metric("Mandados Salvos (Total)", len(st.session_state.mandados))
+c_m2.metric("Ativos (Últimos 45 Dias)", len(mandados_validos_45d))
+c_m3.metric("Filtrados na Tela", len(mandados_filtrados))
 c_m4.metric("Status BNMP 3.0", "Conectado", delta="Tempo Real")
 
 st.markdown("---")
 
+# Filtro de Busca por Texto
 busca = st.text_input("🔍 Pesquisar por Nome, CPF, Comarca ou Nº do Mandado:", placeholder="Digite para buscar...")
 if busca:
     mandados_filtrados = [
         m for m in mandados_filtrados
-        if busca.lower() in m.get('nome', '').lower() or busca in m.get('id', '') or busca in m.get('cpf', '') or busca.lower() in m.get('comarca', '').lower()
+        if busca.lower() in m['nome'].lower() or busca in m['id'] or busca in m['cpf'] or busca.lower() in m['comarca'].lower()
     ]
 
-# ORDENAÇÃO CRONOLÓGICA (Mais recente para o mais antigo)
-mandados_filtrados = sorted(mandados_filtrados, key=lambda x: x.get('expedicao_dt', datetime.datetime.now()), reverse=True)
+# Ordenação cronológica (mais recentes primeiro)
+mandados_filtrados = sorted(mandados_filtrados, key=lambda x: x.get('timestamp', 0), reverse=True)
 
-aba1, aba2, aba3, aba4 = st.tabs([
-    "📋 Mandados Expedidos (Últimos 45 dias)",
-    "🚀 Importar Rápido (Bookmarklet / Texto)",
-    "⚙️ Configuração WhatsApp",
-    "📊 Estatísticas"
-])
+# Abas da Aplicação
+aba1, aba2, aba3 = st.tabs(["📋 Mandados Expedidos", "🚀 Importar Rápido (Bookmarklet / Texto)", "📊 Estatísticas"])
 
 with aba1:
     st.subheader(f"Mandados Expedidos na Região ({len(mandados_filtrados)})")
-    st.caption("Exibindo exclusivamente mandados com data de expedição judicial nos últimos 45 dias.")
     
     if not mandados_filtrados:
-        st.warning("⚠️ Nenhum mandado real importado no momento.")
-        st.info("👉 Vá na aba '🚀 Importar Rápido (Bookmarklet / Texto)' para colar os mandados capturados no BNMP!")
+        st.info("Nenhum mandado localizado. Utilize a aba 'Importar Rápido' para alimentar a base com os dados do BNMP.")
     else:
         for m in mandados_filtrados:
             st.markdown(f"""
             <div class="card-mandado">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-size:17px; font-weight:bold; color:#0F172A;">👤 {m.get('nome', 'NÃO INFORMADO')} (CPF: {m.get('cpf', '000.***.***-00')})</span>
-                    <span class="badge-status">{m.get('situacao', 'Pendente de Cumprimento')}</span>
+                    <span style="font-size:18px; font-weight:bold; color:#0F172A;">👤 {m['nome']} (CPF: {m['cpf']})</span>
+                    <span class="badge-status">{m['situacao']}</span>
                 </div>
-                <div style="margin-top: 6px; color: #475569; font-size: 13px;">
-                    <span class="badge-cia">🛡️ {m.get('companhia', '1ª CIA')}</span>
-                    <b>Comarca/Município:</b> <span class="badge-cidade">📍 {m.get('comarca', 'N/A')}</span> | 
-                    <b>Nº Mandado:</b> <code>{m.get('id', 'N/A')}</code>
+                <div style="margin-top: 8px; color: #475569; font-size: 13px;">
+                    <span class="badge-cia">🛡️ {m['companhia']}</span>
+                    <b>Comarca/Município:</b> <span class="badge-cidade">📍 {m['comarca']}</span>
                 </div>
-                <div style="margin-top: 6px; color: #334155; font-size: 13px;">
-                    ⚖️ <b>Órgão Expedidor:</b> {m.get('orgao_expedidor', 'Vara Criminal')} | 
-                    ⏰ <b>Expedido em (Judicial):</b> <b>{m.get('expedicao_datahora', 'N/A')}</b>
+                <div style="margin-top: 8px; color: #334155; font-size: 13px;">
+                    ⚖️ <b>Órgão Expedidor:</b> {m['orgao_expedidor']} | 
+                    ⏰ <b>Expedido em (Judicial):</b> {m['expedicao_datahora']}
+                </div>
+                <div style="margin-top: 10px;">
+                    <b>📜 Número do Mandado (Copie para pesquisar no BNMP):</b><br>
+                    <div class="caixa-mandado">{m['id']}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            col_pdf, col_wa = st.columns(2)
-            with col_pdf:
-                st.link_button(
-                    label=f"🔗 Abrir PDF no BNMP 3.0 ({m.get('id')})",
-                    url="https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
-                )
-                st.markdown(
-                    f"<div style='background-color:#FEF3C7; color:#78350F; padding:8px; border-radius:6px; font-size:12px; margin-top:5px;'>"
-                    f"🔐 <b>Nº para pesquisar no BNMP:</b> <code>{m.get('id')}</code><br>"
-                    f"<i>Ao clicar no botão acima, digite/cole este número no site do BNMP, resolva o CAPTCHA e baixe o PDF assinado pelo juiz.</i>"
-                    f"</div>", 
-                    unsafe_allow_html=True
-                )
-            with col_wa:
-                if st.button(f"📲 Alerta WhatsApp ({m.get('id')})", key=f"wa_{m.get('id')}"):
-                    texto_msg = (
-                        f"🚨 *NOVO MANDADO DE PRISÃO DETECTADO - PMPR*\n\n"
-                        f"🛡️ *{m.get('companhia')} - Município: {m.get('comarca')}*\n"
-                        f"👤 *Nome:* {m.get('nome')} (CPF: {m.get('cpf')})\n"
-                        f"📜 *Nº Mandado:* {m.get('id')}\n"
-                        f"⚖️ *Órgão Expedidor:* {m.get('orgao_expedidor')}\n"
-                        f"⏰ *Expedido em:* {m.get('expedicao_datahora')}\n\n"
-                        f"📄 *Buscar PDF no BNMP:* https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
-                    )
-                    st.success(f"Alerta enviado para o WhatsApp cadastrado ({num_whatsapp})!")
-                    st.code(texto_msg, language="markdown")
+            col_link, col_info = st.columns([4, 6])
+            with col_link:
+                st.markdown(f"""
+                <a href="https://portalbnmp.cnj.jus.br/#/pesquisa-peca" target="_blank" style="text-decoration:none;">
+                    <button style="background-color:#2563EB; color:white; border:none; padding:10px 16px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%;">
+                        🔗 Abrir PDF / Consultar no BNMP 3.0 (CNJ)
+                    </button>
+                </a>
+                """, unsafe_allow_html=True)
+            with col_info:
+                st.caption("ℹ️ *Copie o número do mandado acima, clique no botão para abrir o site do CNJ, cole o número e resolva o CAPTCHA para visualizar o PDF oficial.*")
+            st.markdown("<br>", unsafe_allow_html=True)
 
 with aba2:
-    st.subheader("🚀 Importar Mandados Rápido (Bookmarklet / Copiar e Colar)")
-    st.markdown(
-        "Utilize esta aba para **colar o resultado capturado pelo botão '🚀 Enviar Mandados PMPR'** "
-        "ou cole linhas no formato `Nº Mandado | Nome | CPF | Cidade | Órgão | Data`."
-    )
+    st.subheader("🚀 Importação Automática dos Mandados Reais do BNMP")
+    st.write("Cole aqui o texto copiado pelo botão **`🚀 Enviar Mandados PMPR`** (Bookmarklet do navegador) ou de arquivos planilhados:")
     
-    texto_importado = st.text_area(
-        "Cole aqui o texto copiado pelo Bookmarklet ou do BNMP (Ctrl + V):",
-        height=200,
-        placeholder="Cole o conteúdo copiado aqui..."
-    )
+    texto_input = st.text_area("Texto dos Mandados Capturados:", height=200, placeholder="BNMP-2026-010420 | CARLOS EDUARDO SOUZA | 088.***.***-12 | Cornélio Procópio | Vara Criminal | 03/11/2026 08:30:00")
     
-    col_bt1, col_bt2 = st.columns(2)
-    with col_bt1:
-        if st.button("📥 Processar e Salvar no App", type="primary"):
-            if not texto_importado.strip():
-                st.warning("Cole o texto antes de clicar em processar!")
-            else:
-                linhas = texto_importado.strip().split("\n")
-                novos_adicionados = 0
-                for lin in linhas:
-                    if not lin.strip():
-                        continue
-                    if "|" in lin:
-                        partes = [p.strip() for p in lin.split("|")]
-                    else:
-                        partes = [lin.strip()]
-                    
-                    if len(partes) >= 1:
-                        m_id = partes[0]
-                        m_nome = partes[1] if len(partes) > 1 else "NÃO INFORMADO"
-                        m_cpf = partes[2] if len(partes) > 2 else "000.***.***-00"
-                        m_cidade = partes[3] if len(partes) > 3 else "Cornélio Procópio"
-                        m_orgao = partes[4] if len(partes) > 4 else f"Vara Criminal de {m_cidade}"
-                        m_data_str = partes[5] if len(partes) > 5 else datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                        
-                        try:
-                            dt_obj = datetime.datetime.strptime(m_data_str, "%d/%m/%Y %H:%M:%S")
-                        except Exception:
-                            dt_obj = datetime.datetime.now()
-                        
-                        cia_pertencente = identificar_companhia(m_cidade)
-                        
-                        ids_existentes = [m.get('id') for m in st.session_state.mandados]
-                        if m_id not in ids_existentes:
-                            st.session_state.mandados.append({
-                                "id": m_id,
-                                "nome": m_nome,
-                                "cpf": m_cpf,
-                                "comarca": m_cidade,
-                                "companhia": cia_pertencente,
-                                "orgao_expedidor": m_orgao,
-                                "expedicao_dt": dt_obj,
-                                "expedicao_datahora": m_data_str,
-                                "situacao": "Pendente de Cumprimento",
-                                "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
-                            })
-                            novos_adicionados += 1
-                
-                salvar_mandados_json(st.session_state.mandados)
-                st.success(f"✅ {novos_adicionados} novos mandados salvos e salvos no arquivo 'mandados.json' com sucesso!")
-                time.sleep(1.0)
+    if st.button("📥 Processar e Salvar no App", type="primary"):
+        if texto_input.strip():
+            qtd = processar_texto_importado(texto_input)
+            if qtd > 0:
+                st.success(f"✅ {qtd} novo(s) mandado(s) real(is) importado(s) e salvo(s) com sucesso!")
                 recarregar_app()
-
-    with col_bt2:
-        file_upload = st.file_open = st.file_uploader("Ou faça upload de arquivo (.csv, .xlsx):", type=["csv", "xlsx"])
-        if file_upload is not None:
-            try:
-                if file_upload.name.endswith('.csv'):
-                    df_up = pd.read_csv(file_upload)
-                else:
-                    df_up = pd.read_excel(file_upload)
-                st.dataframe(df_up.head())
-                if st.button("📥 Importar Planilha Uploaded"):
-                    novos_up = 0
-                    for _, row in df_up.iterrows():
-                        m_id = str(row.get('Nº Mandado', row.get('id', f"BNMP-2026-{novos_up}")))
-                        m_nome = str(row.get('Nome', row.get('nome', 'NÃO INFORMADO')))
-                        m_cpf = str(row.get('CPF', row.get('cpf', '000.***.***-00')))
-                        m_cidade = str(row.get('Cidade', row.get('comarca', 'Cornélio Procópio')))
-                        m_orgao = str(row.get('Órgão', row.get('orgao_expedidor', f'Vara Criminal de {m_cidade}')))
-                        m_data_str = str(row.get('Data', row.get('expedicao_datahora', datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"))))
-                        
-                        try:
-                            dt_obj = datetime.datetime.strptime(m_data_str, "%d/%m/%Y %H:%M:%S")
-                        except Exception:
-                            dt_obj = datetime.datetime.now()
-                            
-                        cia_pertencente = identificar_companhia(m_cidade)
-                        ids_existentes = [m.get('id') for m in st.session_state.mandados]
-                        if m_id not in ids_existentes:
-                            st.session_state.mandados.append({
-                                "id": m_id,
-                                "nome": m_nome,
-                                "cpf": m_cpf,
-                                "comarca": m_cidade,
-                                "companhia": cia_pertencente,
-                                "orgao_expedidor": m_orgao,
-                                "expedicao_dt": dt_obj,
-                                "expedicao_datahora": m_data_str,
-                                "situacao": "Pendente de Cumprimento",
-                                "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
-                            })
-                            novos_up += 1
-                    salvar_mandados_json(st.session_state.mandados)
-                    st.success(f"✅ {novos_up} mandados da planilha salvos com sucesso!")
-                    time.sleep(1.0)
-                    recarregar_app()
-            except Exception as e:
-                st.error(f"Erro ao ler arquivo: {e}")
+            else:
+                st.warning("Nenhum mandado novo foi adicionado (ou os mandados colados já existem no banco).")
+        else:
+            st.error("Por favor, cole os dados antes de clicar em processar.")
 
 with aba3:
-    st.subheader("⚙️ Configuração do Webhook / Envio do WhatsApp")
-    st.write("Insira as credenciais do seu serviço de WhatsApp (Evolution API / Z-API):")
-    st.text_input("Endpoint da API HTTP:", value="http://localhost:8080/message/sendText")
-    st.text_input("Número do WhatsApp de Destino:", value=num_whatsapp)
-    if st.button("💾 Salvar Parâmetros"):
-        st.success("Configurações salvas!")
-
-with aba4:
-    st.subheader("📊 Estatísticas por Companhia e Município")
+    st.subheader("📊 Estatísticas Operacionais da Região")
     if mandados_filtrados:
         df_mandados = pd.DataFrame(mandados_filtrados)
-        st.markdown("#### Total por Companhia")
-        st.bar_chart(df_mandados['companhia'].value_counts())
-        st.markdown("#### Total por Município")
-        st.bar_chart(df_mandados['comarca'].value_counts())
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            st.markdown("#### Mandados por Companhia")
+            st.bar_chart(df_mandados['companhia'].value_counts())
+        with col_g2:
+            st.markdown("#### Mandados por Município")
+            st.bar_chart(df_mandados['comarca'].value_counts())
     else:
-        st.write("Nenhum dado para exibir.")
+        st.write("Nenhum dado disponível para estatísticas.")
