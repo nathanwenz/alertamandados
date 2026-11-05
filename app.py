@@ -125,18 +125,6 @@ if "mandados" not in st.session_state:
             "expedicao_datahora": (agora - datetime.timedelta(days=15)).strftime("%d/%m/%Y %H:%M:%S"),
             "situacao": "Pendente de Cumprimento",
             "pdf_url_oficial": url_bnmp_busca
-        },
-        {
-            "id": "BNMP-2026-009844",
-            "nome": "JEFFERSON MATOS FERREIRA",
-            "cpf": "099.***.***-67",
-            "comarca": "Congonhinhas",
-            "companhia": "3ª CIA (Assaí)",
-            "orgao_expedidor": "Vara Criminal de Assaí / Juizado de Congonhinhas - TJPR",
-            "expedicao_dt": agora - datetime.timedelta(days=30),
-            "expedicao_datahora": (agora - datetime.timedelta(days=30)).strftime("%d/%m/%Y %H:%M:%S"),
-            "situacao": "Pendente de Cumprimento",
-            "pdf_url_oficial": url_bnmp_busca
         }
     ]
 
@@ -179,12 +167,6 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📲 WhatsApp de Destino")
 num_whatsapp = st.sidebar.text_input("Número Cadastrado (DDD + Número):", value="43999999999")
 
-st.sidebar.markdown("---")
-if st.sidebar.button("🔄 Executar Varredura BNMP Agora"):
-    with st.spinner("Consultando BNMP 3.0..."):
-        time.sleep(1.0)
-        st.sidebar.success("Varredura concluída!")
-
 # ÁREA PRINCIPAL
 st.markdown('<div class="titulo-principal">🚨 PMPR - Mandados de Prisão Ativos (Últimos 45 dias)</div>', unsafe_allow_html=True)
 
@@ -216,7 +198,7 @@ mandados_filtrados = sorted(mandados_filtrados, key=lambda x: x['expedicao_dt'],
 
 aba1, aba2, aba3, aba4 = st.tabs([
     "📋 Mandados Expedidos (Últimos 45 dias)",
-    "📸 Fotocópia / Importar do BNMP",
+    "🚀 Importar com 1 Clique (Bookmarklet)",
     "⚙️ Configuração WhatsApp",
     "📊 Estatísticas"
 ])
@@ -256,12 +238,12 @@ with aba1:
                 st.markdown(
                     f"<div style='background-color:#FEF3C7; color:#78350F; padding:8px; border-radius:6px; font-size:12px; margin-top:5px;'>"
                     f"🔐 <b>Nº para buscar no BNMP:</b> <code>{m['id']}</code><br>"
-                    f"<i>Clique no botão para abrir o BNMP público, digite o número ou nome acima, resolva o CAPTCHA e baixe a peça oficial.</i>"
+                    f"<i>Clique no botão acima para abrir o portal oficial, digite este número, resolva o CAPTCHA e baixe o PDF.</i>"
                     f"</div>", 
                     unsafe_allow_html=True
                 )
             with col_wa:
-                if st.button(f"📲 Testar Alerta WhatsApp ({m['id']})", key=f"wa_{m['id']}"):
+                if st.button(f"📲 Alerta WhatsApp ({m['id']})", key=f"wa_{m['id']}"):
                     texto_msg = (
                         f"🚨 *NOVO MANDADO DE PRISÃO DETECTADO - PMPR*\n\n"
                         f"🛡️ *{m['companhia']} - Município: {m['comarca']}*\n"
@@ -271,43 +253,48 @@ with aba1:
                         f"⏰ *Expedido em:* {m['expedicao_datahora']}\n\n"
                         f"📄 *Buscar PDF no BNMP:* https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
                     )
-                    st.success(f"Alerta enviado para o WhatsApp cadastrado ({num_whatsapp})!")
+                    st.success(f"Alerta simulado para o WhatsApp ({num_whatsapp})!")
                     st.code(texto_msg, language="markdown")
 
 with aba2:
-    st.subheader("📸 Fotocópia / Importar Rápido de Mandados do BNMP 3.0")
+    st.subheader("🚀 Importador Automático (Método 3: Botão de 1 Clique)")
     st.markdown(
-        "Utilize esta ferramenta para **copiar e colar dados públicos retirados da consulta do BNMP 3.0** "
-        "sem precisar de chave de API. O sistema irá catalogar os mandados, organizar por Companhia e atualizar a lista do patrulheiro."
-    )
-    
-    exemplo_texto = (
-        "BNMP-2026-010420 | CARLOS EDUARDO SOUZA | 088.***.***-12 | Cornélio Procópio | Vara Criminal de Cornélio Procópio | 03/11/2026 08:30:00\n"
-        "BNMP-2026-010425 | MARCOS VINICIUS PEREIRA | 055.***.***-44 | Bandeirantes | Vara Criminal de Bandeirantes | 03/11/2026 09:15:00\n"
-        "BNMP-2026-010430 | RAFAEL HENRIQUE SILVA | 033.***.***-77 | Assaí | Vara Criminal de Assaí | 02/11/2026 14:20:00"
+        "Instale o botão **'🚀 Enviar Mandados PMPR'** no navegador do computador do batalhão. "
+        "Depois de fazer a busca no BNMP 3.0 e resolver o CAPTCHA, clique no botão para capturar tudo e colar abaixo com 1 clique!"
     )
     
     texto_importado = st.text_area(
-        "Cole aqui as linhas de mandados (Formato: Nº Mandado | Nome | CPF | Cidade | Órgão | Data Expedição):",
-        value=exemplo_texto,
-        height=150
+        "Cole aqui os dados capturados pelo Botão do Navegador (ou em lote):",
+        placeholder="Aperte Ctrl+V para colar os dados capturados...",
+        height=180
     )
     
-    if st.button("📥 Processar Fotocópia e Atualizar Painel"):
-        linhas = texto_importado.strip().split("\n")
-        novos_adicionados = 0
-        for lin in linhas:
-            if not lin.strip() or "|" not in lin:
-                continue
-            partes = [p.strip() for p in lin.split("|")]
-            if len(partes) >= 4:
-                m_id = partes
-                m_nome = partes[1]
-                m_cpf = partes[2] if len(partes) > 2 else "000.***.***-00"
-                m_cidade = partes[3] if len(partes) > 3 else "Cornélio Procópio"
-                m_orgao = partes[4] if len(partes) > 4 else f"Vara Criminal de {m_cidade}"
-                m_data_str = partes[5] if len(partes) > 5 else datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                
+    if st.button("📥 Processar e Atualizar Painel"):
+        if not texto_importado.strip():
+            st.warning("Cole o texto capturado antes de processar.")
+        else:
+            linhas = texto_importado.strip().split("\n")
+            novos_adicionados = 0
+            for lin in linhas:
+                if not lin.strip():
+                    continue
+                if "|" in lin:
+                    partes = [p.strip() for p in lin.split("|")]
+                    m_id = partes[0]
+                    m_nome = partes[1] if len(partes) > 1 else "NÃO INFORMADO"
+                    m_cpf = partes[2] if len(partes) > 2 else "000.***.***-00"
+                    m_cidade = partes[3] if len(partes) > 3 else "Cornélio Procópio"
+                    m_orgao = partes[4] if len(partes) > 4 else f"Vara Criminal de {m_cidade}"
+                    m_data_str = partes[5] if len(partes) > 5 else datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                else:
+                    # Leitura flexível
+                    m_id = f"BNMP-2026-{int(time.time()) % 100000:06d}"
+                    m_nome = lin.strip()
+                    m_cpf = "000.***.***-00"
+                    m_cidade = "Cornélio Procópio"
+                    m_orgao = "Vara Criminal"
+                    m_data_str = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
                 try:
                     dt_obj = datetime.datetime.strptime(m_data_str, "%d/%m/%Y %H:%M:%S")
                 except Exception:
@@ -330,21 +317,21 @@ with aba2:
                         "pdf_url_oficial": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
                     })
                     novos_adicionados += 1
-        
-        st.success(f"✅ {novos_adicionados} novos mandados processados e adicionados ao painel com sucesso!")
-        time.sleep(1.0)
-        recarregar_app()
+            
+            st.success(f"✅ {novos_adicionados} mandados importados com sucesso!")
+            time.sleep(0.8)
+            recarregar_app()
 
 with aba3:
     st.subheader("⚙️ Configuração do Webhook / Envio do WhatsApp")
-    st.write("Insira as credenciais do seu serviço de WhatsApp (Evolution API / Z-API):")
+    st.write("Insira as credenciais da API do WhatsApp:")
     st.text_input("Endpoint da API HTTP:", value="http://localhost:8080/message/sendText")
     st.text_input("Número do WhatsApp de Destino:", value=num_whatsapp)
     if st.button("💾 Salvar Parâmetros"):
         st.success("Configurações salvas!")
 
 with aba4:
-    st.subheader("📊 Estatísticas por Companhia e Município")
+    st.subheader("📊 Estatísticas da Região")
     if mandados_filtrados:
         df_mandados = pd.DataFrame(mandados_filtrados)
         st.markdown("#### Total por Companhia")
