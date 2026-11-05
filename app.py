@@ -15,9 +15,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização visual customizada
+# Estilização visual customizada e ocultação de elementos de criação do Streamlit
 st.markdown("""
 <style>
+    /* Ocultar barra superior, menu de 3 pontos, botão Fork e ícone do GitHub */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    
     .titulo-principal {
         font-size: 24px;
         font-weight: bold;
@@ -69,7 +74,26 @@ st.markdown("""
         color: #854D0E;
         display: inline-block;
     }
+    
+    /* Marca d'água de desenvolvimento no canto inferior direito */
+    .watermark-dev {
+        position: fixed;
+        bottom: 12px;
+        right: 130px;
+        font-size: 11px;
+        font-weight: bold;
+        color: #475569;
+        background-color: rgba(255, 255, 255, 0.95);
+        border: 1px solid #CBD5E1;
+        padding: 4px 10px;
+        border-radius: 6px;
+        z-index: 999999;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        pointer-events: none;
+    }
 </style>
+
+<div class="watermark-dev">Dev: Nathan Wenzel</div>
 """, unsafe_allow_html=True)
 
 # Estrutura Organizacional Hierárquica da PMPR (Companhia -> Comarcas Sedes -> Municípios)
