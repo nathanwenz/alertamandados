@@ -310,7 +310,7 @@ with aba1:
             </div>
             """, unsafe_allow_html=True)
             
-            col_link, col_info = st.columns()
+            col_link, col_info = st.columns(2)
             with col_link:
                 st.markdown(f"""
                 <a href="https://portalbnmp.cnj.jus.br/#/pesquisa-peca" target="_blank" style="text-decoration:none;">
