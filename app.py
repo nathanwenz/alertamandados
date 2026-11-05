@@ -83,11 +83,18 @@ ESTRUTURA_COMPANHIAS = {
         "Santo Antônio do Paraíso", "São Jerônimo da Serra", "Santa Cecília do Pavão", "Nova Santa Bárbara"
     ],
     "Outras Comarcas (Paraná)": [
-        "Londrina", "Maringá", "Curitiba", "Ponta Grossa", "Jacarezinho", "Santo Antônio da Platina", "Cascavel", "Foz do Iguaçu", "Guarapuava", "Toledo"
+        "Londrina", "Maringá", "Curitiba", "Ponta Grossa", "Jacarezinho", "Santo Antônio da Platina",
+        "Cascavel", "Foz do Iguaçu", "Guarapuava", "Toledo", "Apucarana", "Arapongas", "Campo Mourão",
+        "Umuarama", "Paranavaí", "Pato Branco", "Francisco Beltrão", "Telêmaco Borba", "Jandaia do Sul"
     ]
 }
 
 ARQUIVO_DADOS = "mandados.json"
+
+TODAS_CIDADES = []
+for c_list in ESTRUTURA_COMPANHIAS.values():
+    TODAS_CIDADES.extend(c_list)
+TODAS_CIDADES = sorted(list(set(TODAS_CIDADES)), key=lambda x: len(x), reverse=True)
 
 def identificar_companhia(cidade_nome):
     cidade_clean = str(cidade_nome).strip().lower()
@@ -96,6 +103,13 @@ def identificar_companhia(cidade_nome):
             if c.lower() == cidade_clean or c.lower() in cidade_clean or cidade_clean in c.lower():
                 return cia
     return "Outras Comarcas (Paraná)"
+
+def identificar_cidade_no_texto(texto):
+    texto_lower = str(texto).lower()
+    for c in TODAS_CIDADES:
+        if c.lower() in texto_lower:
+            return c
+    return None
 
 def carregar_mandados_salvos():
     if os.path.exists(ARQUIVO_DADOS):
@@ -149,38 +163,67 @@ def processar_texto_importado(texto_bruto):
     novos_mandados = []
     agora = datetime.datetime.now()
     
-    todas_cidades = []
-    for c_list in ESTRUTURA_COMPANHIAS.values():
-        todas_cidades.extend(c_list)
+    eh_pipe = any('|' in l for l in linhas)
+    blocos_dados = []
+    
+    if eh_pipe:
+        for l in linhas:
+            if '|' in l:
+                partes = [p.strip() for p in l.split('|')]
+                if len(partes) >= 2:
+                    blocos_dados.append({
+                        'id': partes[0] if len(partes) > 0 else '',
+                        'nome': partes[1] if len(partes) > 1 else '',
+                        'cpf': partes[2] if len(partes) > 2 else '',
+                        'cidade': partes[3] if len(partes) > 3 else '',
+                        'orgao': partes[4] if len(partes) > 4 else '',
+                        'data': partes[5] if len(partes) > 5 else ''
+                    })
+    else:
+        current_record = {}
+        for l in linhas:
+            id_match = re.search(r'([A-Z0-9\.\-\/]{10,}(?:BNMP|\d{4}-\d+|\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}))', l, re.IGNORECASE)
+            cpf_match = re.search(r'(\d{3}\.[\*\d]{3}\.[\*\d]{3}-\d{2})', l)
+            data_match = re.search(r'(\d{2}/\d{2}/\d{4}(?:\s+\d{2}:\d{2}(?::\d{2})?)?)', l)
+            
+            if id_match and 'id' in current_record:
+                blocos_dados.append(current_record)
+                current_record = {}
+                
+            if id_match and 'id' not in current_record:
+                current_record['id'] = id_match.group(1)
+            
+            if cpf_match:
+                current_record['cpf'] = cpf_match.group(1)
+                
+            if data_match:
+                current_record['data'] = data_match.group(1)
+                
+            cidade_encontrada = identificar_cidade_no_texto(l)
+            if cidade_encontrada and 'cidade' not in current_record:
+                current_record['cidade'] = cidade_encontrada
+                
+            if ('vara' in l.lower() or 'juizado' in l.lower() or 'comarca' in l.lower() or 'tribunal' in l.lower() or 'tjpr' in l.lower()) and 'orgao' not in current_record:
+                current_record['orgao'] = l
+                
+            if 'nome' not in current_record and not id_match and not cpf_match and not data_match:
+                if l == l.upper() and len(l.split()) >= 2 and not any(kw in l.lower() for kw in ['mandado', 'prisão', 'peça', 'órgão', 'expedidor', 'município', 'situação', 'pendente', 'tribunal', 'vara']):
+                    current_record['nome'] = l
+
+        if current_record:
+            blocos_dados.append(current_record)
+            
+    for b in blocos_dados:
+        mandado_id = str(b.get('id', '')).strip()
+        if not mandado_id:
+            continue
+            
+        nome = str(b.get('nome', '')).strip() or "NÃO INFORMADO"
+        cpf = str(b.get('cpf', '')).strip() or "000.***.***-00"
+        cidade = str(b.get('cidade', '')).strip() or "Outras Comarcas (Paraná)"
+        orgao = str(b.get('orgao', '')).strip() or "Vara Criminal da Comarca"
+        expedicao = str(b.get('data', '')).strip() or agora.strftime("%d/%m/%Y %H:%M:%S")
         
-    for linha in linhas:
-        partes = [str(p.strip()) for p in linha.split('|')]
-        
-        if len(partes) >= 4:
-            mandado_id = partes[0] if len(partes) > 0 and partes[0] else f"BNMP-2026-{len(st.session_state.mandados)+len(novos_mandados)+1001}"
-            nome = partes[1] if len(partes) > 1 and partes[1] else "NÃO INFORMADO"
-            cpf = partes[2] if len(partes) > 2 and partes[2] else "000.***.***-00"
-            cidade = partes[3] if len(partes) > 3 and partes[3] else "Outras Comarcas (Paraná)"
-            orgao = partes[4] if len(partes) > 4 and partes[4] else "Vara Criminal da Comarca"
-            expedicao = partes[5] if len(partes) > 5 and partes[5] else agora.strftime("%d/%m/%Y %H:%M:%S")
-        else:
-            id_match = re.search(r'([A-Z0-9\.\-\/]+(?:BNMP|\d{4}-\d+|\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}))', linha)
-            cpf_match = re.search(r'(\d{3}\.[\*\d]{3}\.[\*\d]{3}-\d{2})', linha)
-            data_match = re.search(r'(\d{2}/\d{2}/\d{4}(?:\s+\d{2}:\d{2}:\d{2})?)', linha)
-            
-            mandado_id = str(id_match.group(1)) if id_match else f"BNMP-2026-{len(st.session_state.mandados)+len(novos_mandados)+1001}"
-            cpf = str(cpf_match.group(1)) if cpf_match else "000.***.***-00"
-            expedicao = str(data_match.group(1)) if data_match else agora.strftime("%d/%m/%Y %H:%M:%S")
-            
-            cidade = "Outras Comarcas (Paraná)"
-            for c in todas_cidades:
-                if c.lower() in linha.lower():
-                    cidade = c
-                    break
-            
-            nome = "NÃO INFORMADO"
-            orgao = "Vara Criminal da Comarca"
-            
         cia = identificar_companhia(cidade)
         
         try:
@@ -325,9 +368,9 @@ with aba1:
 
 with aba2:
     st.subheader("🚀 Importação Automática dos Mandados Reais do BNMP")
-    st.write("Cole aqui o texto copiado pelo botão **`🚀 Enviar Mandados PMPR`** (Bookmarklet do navegador) ou de arquivos planilhados:")
+    st.write("Cole aqui o texto copiado pelo botão **`🚀 Enviar Mandados PMPR`** (Bookmarklet do navegador) ou cole diretamente o texto selecionado na tela do BNMP:")
     
-    texto_input = st.text_area("Texto dos Mandados Capturados:", height=200, placeholder="BNMP-2026-010420 | CARLOS EDUARDO SOUZA | 088.***.***-12 | Assaí | Vara Criminal de Assaí | 03/11/2026 08:30:00")
+    texto_input = st.text_area("Texto dos Mandados Capturados:", height=200, placeholder="Cole o texto capturado ou copiado da tela do BNMP 3.0 aqui...")
     
     if st.button("📥 Processar e Salvar no App", type="primary"):
         if texto_input.strip():
