@@ -1,11 +1,11 @@
+import streamlit as st
+import pandas as pd
 import datetime
 import json
 import os
 import re
 import io
 import unicodedata
-import pandas as pd
-import streamlit as st
 
 # Configuração da página no Streamlit
 st.set_page_config(
@@ -98,31 +98,76 @@ def remover_acentos(texto):
         return ""
     return "".join(c for c in unicodedata.normalize("NFD", str(texto)) if unicodedata.category(c) != "Mn")
 
+# Tabela completa de normalização com suporte a abreviações e nomes sem acento
 MAPA_NORMALIZACAO = {}
 for cia_key, cidades_list in ESTRUTURA_COMPANHIAS.items():
     for c in cidades_list:
+        c_clean = remover_acentos(c.lower())
         MAPA_NORMALIZACAO[c.lower()] = c
-        MAPA_NORMALIZACAO[remover_acentos(c.lower())] = c
-        cap_js = " ".join([w.capitalize() for w in c.split(" ")])
-        MAPA_NORMALIZACAO[cap_js.lower()] = c
+        MAPA_NORMALIZACAO[c_clean] = c
+        
+        if c == 'Cornélio Procópio':
+            for v in ['cornelio procopio', 'c procopio', 'c. procopio', 'procopio']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'Nova Fátima':
+            for v in ['nova fatima', 'n fatima', 'n. fatima']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'Rancho Alegre':
+            for v in ['rancho alegre', 'r alegre', 'r. alegre']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'Santa Amélia':
+            for v in ['santa amelia', 'sta amelia', 'sta. amelia', 'st amelia']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'Barra do Jacaré':
+            for v in ['barra do jacare', 'b jacare', 'b. jacare', 'b. do jacare']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'Santa Mariana':
+            for v in ['santa mariana', 'sta mariana', 'sta. mariana', 'st mariana']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'Nova América da Colina':
+            for v in ['nova america da colina', 'n america colina', 'n. america da colina']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'São Sebastião da Amoreira':
+            for v in ['sao sebastiao da amoreira', 's s amoreira', 's.s. amoreira', 's. s. amoreira', 's. sebastiao da amoreira', 'amoreira']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'Santo Antônio do Paraíso':
+            for v in ['santo antonio do paraiso', 'sto antonio paraiso', 'sto. antonio do paraiso', 'st. antonio do paraiso']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'São Jerônimo da Serra':
+            for v in ['sao jeronimo da serra', 's jeronimo serra', 's. jeronimo da serra']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'Santa Cecília do Pavão':
+            for v in ['santa cecilia do pavao', 'sta cecilia pavao', 'sta. cecilia do pavao']: MAPA_NORMALIZACAO[v] = c
+        elif c == 'Nova Santa Bárbara':
+            for v in ['nova santa barbara', 'n sta barbara', 'n. sta. barbara', 'santa barbara']: MAPA_NORMALIZACAO[v] = c
 
 def normalizar_cidade(nome_raw):
     if not nome_raw or pd.isna(nome_raw):
-        return "Outras Comarcas (Paraná)"
+        return None
     raw = str(nome_raw).strip()
+    if not raw or raw.lower() == 'nan':
+        return None
     raw_clean = remover_acentos(raw.lower())
     if raw_clean in MAPA_NORMALIZACAO:
         return MAPA_NORMALIZACAO[raw_clean]
-    for key, oficial in MAPA_NORMALIZACAO.items():
-        if key in raw_clean:
-            return oficial
-    return raw
+        
+    sorted_keys = sorted(MAPA_NORMALIZACAO.keys(), key=lambda x: len(x), reverse=True)
+    for key in sorted_keys:
+        if len(key) >= 3 and key in raw_clean:
+            return MAPA_NORMALIZACAO[key]
+    return None
 
 def identificar_companhia(cidade_nome):
     cidade_norm = normalizar_cidade(cidade_nome)
-    for cia, cidades in ESTRUTURA_COMPANHIAS.items():
-        if cidade_norm in cidades:
-            return cia
+    if cidade_norm:
+        for cia, cidades in ESTRUTURA_COMPANHIAS.items():
+            if cidade_norm in cidades:
+                return cia
+    return "Outras Comarcas (Paraná)"
+
+def extrair_cidade_de_item_ou_linha(item):
+    if isinstance(item, dict):
+        vals = [item.get('comarca'), item.get('orgao_expedidor'), item.get('id'), item.get('nome')]
+    elif hasattr(item, 'values'):
+        vals = list(item.values)
+    else:
+        vals = [str(item)]
+        
+    for val in vals:
+        if pd.notna(val):
+            c_norm = normalizar_cidade(val)
+            if c_norm:
+                return c_norm
     return "Outras Comarcas (Paraná)"
 
 def carregar_mandados_salvos():
@@ -132,13 +177,21 @@ def carregar_mandados_salvos():
                 dados = json.load(f)
                 if isinstance(dados, list):
                     clean_list = []
+                    modificado = False
                     for item in dados:
                         if isinstance(item, dict):
-                            c_norm = normalizar_cidade(item.get("comarca", ""))
+                            # Auto-repair comarca if previously set to 'Outras Comarcas' or misclassified
+                            c_norm = extrair_cidade_de_item_ou_linha(item)
                             cia_norm = identificar_companhia(c_norm)
-                            item["comarca"] = c_norm
-                            item["companhia"] = cia_norm
+                            
+                            if item.get("comarca") != c_norm or item.get("companhia") != cia_norm:
+                                item["comarca"] = c_norm
+                                item["companhia"] = cia_norm
+                                modificado = True
+                                
                             clean_list.append(item)
+                    if modificado:
+                        salvar_mandados_disco(clean_list)
                     return clean_list
                 return []
         except Exception:
@@ -150,7 +203,7 @@ def salvar_mandados_disco(lista_mandados):
         limpos = []
         for item in lista_mandados:
             if isinstance(item, dict):
-                c_norm = normalizar_cidade(item.get("comarca", ""))
+                c_norm = extrair_cidade_de_item_ou_linha(item)
                 cia_norm = identificar_companhia(c_norm)
                 limpos.append({
                     "id": str(item.get("id", "")),
@@ -175,6 +228,20 @@ def recarregar_app():
     elif hasattr(st, "experimental_rerun"):
         st.experimental_rerun()
 
+def extrair_data_e_timestamp(val_data):
+    agora = datetime.datetime.now()
+    if pd.isna(val_data) or not val_data or str(val_data).lower() in ['nan', 'none', '']:
+        return agora.strftime("%d/%m/%Y %H:%M:%S"), float(agora.timestamp())
+    try:
+        dt = pd.to_datetime(val_data, dayfirst=True)
+        if pd.notna(dt):
+            exp_str = dt.strftime("%d/%m/%Y %H:%M:%S")
+            ts = float(dt.timestamp())
+            return exp_str, ts
+    except Exception:
+        pass
+    return agora.strftime("%d/%m/%Y %H:%M:%S"), float(agora.timestamp())
+
 # Inicialização do Session State
 if 'estruturas' not in st.session_state:
     st.session_state.estruturas = ESTRUTURA_COMPANHIAS
@@ -196,12 +263,12 @@ def processar_texto_importado(texto_bruto):
                 partes = [p.strip() for p in l.split('|')]
                 if len(partes) >= 2:
                     blocos_dados.append({
-                        'id': partes if len(partes) > 0 else '',
-                        'nome': partes if len(partes) > 1 else '',
-                        'cpf': partes if len(partes) > 2 else '',
-                        'cidade': partes if len(partes) > 3 else '',
-                        'orgao': partes if len(partes) > 4 else '',
-                        'data': partes if len(partes) > 5 else ''
+                        'id': partes[0] if len(partes) > 0 else '',
+                        'nome': partes[1] if len(partes) > 1 else '',
+                        'cpf': partes[2] if len(partes) > 2 else '',
+                        'cidade': partes[3] if len(partes) > 3 else '',
+                        'orgao': partes[4] if len(partes) > 4 else '',
+                        'data': partes[5] if len(partes) > 5 else ''
                     })
     else:
         current_record = {}
@@ -224,7 +291,7 @@ def processar_texto_importado(texto_bruto):
                 current_record['data'] = data_match.group(1)
                 
             c_detectada = normalizar_cidade(l)
-            if c_detectada != l and 'cidade' not in current_record:
+            if c_detectada and 'cidade' not in current_record:
                 current_record['cidade'] = c_detectada
                 
             if ('vara' in l.lower() or 'juizado' in l.lower() or 'comarca' in l.lower() or 'tribunal' in l.lower() or 'tjpr' in l.lower()) and 'orgao' not in current_record:
@@ -244,20 +311,11 @@ def processar_texto_importado(texto_bruto):
             
         nome = str(b.get('nome', '')).strip() or "NÃO INFORMADO"
         cpf = str(b.get('cpf', '')).strip() or "000.***.***-00"
-        cidade = normalizar_cidade(b.get('cidade', ''))
+        cidade = extrair_cidade_de_item_ou_linha(b)
         orgao = str(b.get('orgao', '')).strip() or "Vara Criminal da Comarca"
-        expedicao = str(b.get('data', '')).strip() or agora.strftime("%d/%m/%Y %H:%M:%S")
         
+        expedicao_str, ts = extrair_data_e_timestamp(b.get('data'))
         cia = identificar_companhia(cidade)
-        
-        try:
-            if ":" in expedicao:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y %H:%M:%S")
-            else:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
-            ts = float(dt.timestamp())
-        except Exception:
-            ts = float(agora.timestamp())
 
         if not any(m['id'] == mandado_id for m in st.session_state.mandados) and not any(m['id'] == mandado_id for m in novos_mandados):
             item = {
@@ -267,7 +325,7 @@ def processar_texto_importado(texto_bruto):
                 "comarca": str(cidade),
                 "companhia": str(cia),
                 "orgao_expedidor": str(orgao),
-                "expedicao_datahora": str(expedicao),
+                "expedicao_datahora": str(expedicao_str),
                 "timestamp": float(ts),
                 "situacao": "Pendente de Cumprimento",
                 "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
@@ -287,45 +345,53 @@ def processar_dataframe_importado(df):
     cols_map = {}
     cols_clean = [remover_acentos(str(c).lower().strip()) for c in df.columns]
     
-    # Mapping
-    for orig, c in zip(df.columns, cols_clean):
-        if any(k in c for k in ['no mandado', 'num_mandado', 'numero_mandado', 'n_mandado', 'no do mandado', 'numero do mandado']) or c in ['id', 'mandado', 'numero']:
-            cols_map['id'] = orig
-            break
-    if 'id' not in cols_map:
+    # Keyword identification
+    id_keywords = ['no mandado', 'num_mandado', 'numero_mandado', 'n_mandado', 'numero da peca', 'num_peca', 'numero_peca', 'peca', 'mandado', 'id', 'numero', 'processo']
+    for kw in id_keywords:
         for orig, c in zip(df.columns, cols_clean):
-            if 'mandado' in c or 'id' in c:
+            if kw in c and 'id' not in cols_map:
                 cols_map['id'] = orig
                 break
+        if 'id' in cols_map: break
+
+    nome_keywords = ['nome do procurado', 'nome da pessoa', 'nome do reu', 'nome do individuo', 'nome procurado', 'nome pessoa', 'nome reu', 'nome completo', 'nome', 'procurado', 'pessoa', 'reu', 'individuo']
+    for kw in nome_keywords:
+        for orig, c in zip(df.columns, cols_clean):
+            if kw in c and 'nome' not in cols_map:
+                cols_map['nome'] = orig
+                break
+        if 'nome' in cols_map: break
 
     for orig, c in zip(df.columns, cols_clean):
-        if 'nome' in c or 'procurado' in c or 'individuo' in c or 'pessoa' in c:
-            cols_map['nome'] = orig
-            break
-
-    for orig, c in zip(df.columns, cols_clean):
-        if 'cpf' in c:
+        if 'cpf' in c and 'cpf' not in cols_map:
             cols_map['cpf'] = orig
             break
 
-    for orig, c in zip(df.columns, cols_clean):
-        if 'comarca' in c or 'municipio' in c or 'cidade' in c or 'jurisdicao' in c:
-            cols_map['comarca'] = orig
-            break
+    comarca_keywords = ['comarca', 'municipio', 'cidade', 'jurisdicao', 'foro', 'orgao julgador', 'unidade judiciaria', 'localidade', 'local', 'uf / municipio', 'uf/municipio', 'vara', 'orgao']
+    for kw in comarca_keywords:
+        for orig, c in zip(df.columns, cols_clean):
+            if kw in c and 'comarca' not in cols_map:
+                cols_map['comarca'] = orig
+                break
+        if 'comarca' in cols_map: break
 
-    for orig, c in zip(df.columns, cols_clean):
-        if 'orgao' in c or 'expedidor' in c or 'vara' in c or 'juizado' in c:
-            if cols_map.get('id') != orig:
+    orgao_keywords = ['orgao expedidor', 'orgao_expedidor', 'orgao julgador', 'orgao', 'vara', 'juizado', 'tribunal']
+    for kw in orgao_keywords:
+        for orig, c in zip(df.columns, cols_clean):
+            if kw in c and 'orgao' not in cols_map and orig != cols_map.get('comarca'):
                 cols_map['orgao'] = orig
                 break
+        if 'orgao' in cols_map: break
 
-    for orig, c in zip(df.columns, cols_clean):
-        if 'data' in c or 'expedicao' in c or 'datahora' in c:
-            cols_map['data'] = orig
-            break
+    data_keywords = ['data de expedicao', 'data da expedicao', 'data expedicao', 'data_expedicao', 'data emissao', 'data de emissao', 'expedicao', 'emissao', 'datahora', 'data', 'dt_expedicao']
+    for kw in data_keywords:
+        for orig, c in zip(df.columns, cols_clean):
+            if kw in c and 'data' not in cols_map:
+                cols_map['data'] = orig
+                break
+        if 'data' in cols_map: break
 
     novos_mandados = []
-    agora = datetime.datetime.now()
     
     for idx, row in df.iterrows():
         mandado_id = str(row[cols_map['id']]).strip() if 'id' in cols_map and pd.notna(row[cols_map['id']]) else f"BNMP-2026-CSV-{idx+1}"
@@ -334,21 +400,13 @@ def processar_dataframe_importado(df):
             
         nome = str(row[cols_map['nome']]).strip().upper() if 'nome' in cols_map and pd.notna(row[cols_map['nome']]) else "NÃO INFORMADO"
         cpf = str(row[cols_map['cpf']]).strip() if 'cpf' in cols_map and pd.notna(row[cols_map['cpf']]) else "000.***.***-00"
-        cidade_raw = str(row[cols_map['comarca']]).strip() if 'comarca' in cols_map and pd.notna(row[cols_map['comarca']]) else "Outras Comarcas (Paraná)"
         orgao = str(row[cols_map['orgao']]).strip() if 'orgao' in cols_map and pd.notna(row[cols_map['orgao']]) else "Vara Criminal da Comarca"
-        expedicao = str(row[cols_map['data']]).strip() if 'data' in cols_map and pd.notna(row[cols_map['data']]) else agora.strftime("%d/%m/%Y %H:%M:%S")
+        val_data = row[cols_map['data']] if 'data' in cols_map else None
 
-        cidade = normalizar_cidade(cidade_raw)
+        # Extract city scanning all columns in row
+        cidade = extrair_cidade_de_item_ou_linha(row)
         cia = identificar_companhia(cidade)
-
-        try:
-            if ":" in expedicao:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y %H:%M:%S")
-            else:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
-            ts = float(dt.timestamp())
-        except Exception:
-            ts = float(agora.timestamp())
+        expedicao_str, ts = extrair_data_e_timestamp(val_data)
 
         if not any(m['id'] == mandado_id for m in st.session_state.mandados) and not any(m['id'] == mandado_id for m in novos_mandados):
             item = {
@@ -358,7 +416,7 @@ def processar_dataframe_importado(df):
                 "comarca": str(cidade),
                 "companhia": str(cia),
                 "orgao_expedidor": str(orgao),
-                "expedicao_datahora": str(expedicao),
+                "expedicao_datahora": str(expedicao_str),
                 "timestamp": float(ts),
                 "situacao": "Pendente de Cumprimento",
                 "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
@@ -410,12 +468,11 @@ def carregar_arquivo_upload(uploaded_file):
 st.sidebar.title("🚨 Filtros PMPR")
 st.sidebar.markdown("**Monitor de Mandados BNMP 3.0**")
 
-cias_padrao = ["1ª CIA (Cornélio Procópio)", "2ª CIA (Bandeirantes)", "3ª CIA (Assaí)"]
-
+# Default: Select ALL companies so no mandados are hidden by default!
 cias_selecionadas = st.sidebar.multiselect(
     "1️⃣ Selecionar Companhia(s):",
     options=list(st.session_state.estruturas.keys()),
-    default=cias_padrao
+    default=list(st.session_state.estruturas.keys())
 )
 
 cidades_disponiveis = []
@@ -478,7 +535,7 @@ for m in st.session_state.mandados:
     except Exception:
         mandados_validos_45d.append(m)
 
-cidades_sel_norm = [normalizar_cidade(c) for c in cidades_selecionadas]
+cidades_sel_norm = [normalizar_cidade(c) for c in cidades_selecionadas if normalizar_cidade(c)]
 
 mandados_filtrados = [
     m for m in mandados_validos_45d
