@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import time
 import json
-import os
-import re
 import io
+import re
 import unicodedata
 
 # Configuração da página no Streamlit
@@ -42,6 +42,15 @@ st.markdown("""
         font-size: 13px;
         font-weight: bold;
     }
+    .badge-comarca {
+        background-color: #E0E7FF;
+        color: #3730A3;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: bold;
+        margin-right: 5px;
+    }
     .badge-cia {
         background-color: #FEF3C7;
         color: #92400E;
@@ -72,46 +81,28 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Mapeamento Oficial de Comarcas Sedes (Fóruns) e Companhias PMPR
+# Estrutura Organizacional PMPR por Companhias, Comarcas Sedes (Fóruns) e Municípios Abrangidos
 ESTRUTURA_COMPANHIAS = {
-    "1ª CIA (Cornélio Procópio)": [
-        "Cornélio Procópio", "Leópolis", "Nova Fátima", "Uraí", "Rancho Alegre", "Sertaneja"
-    ],
-    "2ª CIA (Bandeirantes)": [
-        "Bandeirantes", "Santa Amélia", "Andirá", "Barra do Jacaré", "Itambaracá", "Santa Mariana"
-    ],
-    "3ª CIA (Assaí)": [
-        "Assaí", "Nova América da Colina", "São Sebastião da Amoreira", "Congonhinhas",
-        "Santo Antônio do Paraíso", "São Jerônimo da Serra", "Santa Cecília do Pavão", "Nova Santa Bárbara"
-    ],
-    "Outras Comarcas (Paraná)": [
-        "Londrina", "Maringá", "Curitiba", "Ponta Grossa", "Jacarezinho", "Santo Antônio da Platina",
-        "Cascavel", "Foz do Iguaçu", "Guarapuava", "Toledo", "Apucarana", "Arapongas", "Campo Mourão"
-    ]
-}
-
-# Associação direta entre Municípios e suas Comarcas Sedes (Fóruns)
-MAPA_MUNICIPIO_COMARCA = {
-    "cornélio procópio": ("Cornélio Procópio", "1ª CIA (Cornélio Procópio)"),
-    "leópolis": ("Cornélio Procópio", "1ª CIA (Cornélio Procópio)"),
-    "rancho alegre": ("Cornélio Procópio", "1ª CIA (Cornélio Procópio)"),
-    "uraí": ("Uraí", "1ª CIA (Cornélio Procópio)"),
-    "nova fátima": ("Uraí", "1ª CIA (Cornélio Procópio)"),
-    "sertaneja": ("Uraí", "1ª CIA (Cornélio Procópio)"),
-    "bandeirantes": ("Bandeirantes", "2ª CIA (Bandeirantes)"),
-    "santa amélia": ("Bandeirantes", "2ª CIA (Bandeirantes)"),
-    "santa mariana": ("Bandeirantes", "2ª CIA (Bandeirantes)"),
-    "andirá": ("Andirá", "2ª CIA (Bandeirantes)"),
-    "itambaracá": ("Andirá", "2ª CIA (Bandeirantes)"),
-    "barra do jacaré": ("Andirá", "2ª CIA (Bandeirantes)"),
-    "assaí": ("Assaí", "3ª CIA (Assaí)"),
-    "nova américa da colina": ("Assaí", "3ª CIA (Assaí)"),
-    "são sebastião da amoreira": ("Assaí", "3ª CIA (Assaí)"),
-    "congonhinhas": ("Congonhinhas", "3ª CIA (Assaí)"),
-    "santo antônio do paraíso": ("Congonhinhas", "3ª CIA (Assaí)"),
-    "são jerônimo da serra": ("São Jerônimo da Serra", "3ª CIA (Assaí)"),
-    "santa cecília do pavão": ("São Jerônimo da Serra", "3ª CIA (Assaí)"),
-    "nova santa bárbara": ("São Jerônimo da Serra", "3ª CIA (Assaí)"),
+    "1ª CIA (Cornélio Procópio)": {
+        "Cornélio Procópio": ["Cornélio Procópio", "Leópolis", "Rancho Alegre"],
+        "Uraí": ["Uraí", "Nova Fátima", "Sertaneja"]
+    },
+    "2ª CIA (Bandeirantes)": {
+        "Bandeirantes": ["Bandeirantes", "Santa Amélia", "Santa Mariana"],
+        "Andirá": ["Andirá", "Barra do Jacaré", "Itambaracá"]
+    },
+    "3ª CIA (Assaí)": {
+        "Assaí": ["Assaí", "Nova América da Colina", "São Sebastião da Amoreira"],
+        "Congonhinhas": ["Congonhinhas", "Santo Antônio do Paraíso"],
+        "São Jerônimo da Serra": ["São Jerônimo da Serra", "Santa Cecília do Pavão", "Nova Santa Bárbara"]
+    },
+    "Outras Comarcas (Paraná)": {
+        "Outras Comarcas (Paraná)": [
+            "Londrina", "Maringá", "Curitiba", "Ponta Grossa", "Jacarezinho", "Santo Antônio da Platina",
+            "Cascavel", "Foz do Iguaçu", "Guarapuava", "Toledo", "Apucarana", "Arapongas", "Campo Mourão",
+            "Umuarama", "Paranavaí", "Pato Branco", "Francisco Beltrão", "Telêmaco Borba", "Jandaia do Sul"
+        ]
+    }
 }
 
 ARQUIVO_DADOS = "mandados.json"
@@ -121,21 +112,49 @@ def remover_acentos(texto):
         return ""
     return "".join(c for c in unicodedata.normalize("NFD", str(texto)) if unicodedata.category(c) != "Mn")
 
-def normalizar_localizacao(texto_raw):
-    if not texto_raw or pd.isna(texto_raw):
-        return "Outras Comarcas (Paraná)", "Outras Comarcas (Paraná)"
-    
-    raw_lower = str(texto_raw).lower()
-    raw_clean = remover_acentos(raw_lower)
-    
-    for mun_key, (comarca_oficial, cia_oficial) in MAPA_MUNICIPIO_COMARCA.items():
-        mun_clean = remover_acentos(mun_key)
-        pattern = r'\b' + re.escape(mun_clean) + r'\b'
-        if re.search(pattern, raw_clean):
-            return comarca_oficial, cia_oficial
-            
-    # Se não achou município específico, testar se é outra cidade do PR
-    return "Outras Comarcas (Paraná)", "Outras Comarcas (Paraná)"
+# Mapeamento de normalização para Cidades e Comarcas
+MAPA_MUNICIPOS = {}
+MAPA_COMARCA_SEDE = {}
+MAPA_COMPANHIA = {}
+
+for cia_key, comarcas_dict in ESTRUTURA_COMPANHIAS.items():
+    for comarca_sede, m_list in comarcas_dict.items():
+        for m in m_list:
+            norm_m = remover_acentos(m.lower())
+            MAPA_MUNICIPOS[norm_m] = m
+            MAPA_COMARCA_SEDE[norm_m] = comarca_sede
+            MAPA_COMPANHIA[norm_m] = cia_key
+
+def normalizar_municipio(nome_raw):
+    if not nome_raw or pd.isna(nome_raw):
+        return "Outras Comarcas (Paraná)"
+    raw_clean = remover_acentos(str(nome_raw).strip().lower())
+    if raw_clean in MAPA_MUNICIPOS:
+        return MAPA_MUNICIPOS[raw_clean]
+    for key, oficial in MAPA_MUNICIPOS.items():
+        if re.search(r'\b' + re.escape(key) + r'\b', raw_clean):
+            return oficial
+    return str(nome_raw).strip()
+
+def identificar_comarca_sede(cidade_ou_orgao):
+    if not cidade_ou_orgao or pd.isna(cidade_ou_orgao):
+        return "Outras Comarcas (Paraná)"
+    text_clean = remover_acentos(str(cidade_ou_orgao).strip().lower())
+    for key, sede in MAPA_COMARCA_SEDE.items():
+        if re.search(r'\b' + re.escape(key) + r'\b', text_clean):
+            return sede
+    return "Outras Comarcas (Paraná)"
+
+def identificar_companhia(cidade_ou_comarca):
+    cidade_norm = normalizar_municipio(cidade_ou_comarca)
+    cidade_clean = remover_acentos(cidade_norm.lower())
+    if cidade_clean in MAPA_COMPANHIA:
+        return MAPA_COMPANHIA[cidade_clean]
+    comarca_sede = identificar_comarca_sede(cidade_ou_comarca)
+    comarca_clean = remover_acentos(comarca_sede.lower())
+    if comarca_clean in MAPA_COMPANHIA:
+        return MAPA_COMPANHIA[comarca_clean]
+    return "Outras Comarcas (Paraná)"
 
 def carregar_mandados_salvos():
     if os.path.exists(ARQUIVO_DADOS):
@@ -146,10 +165,12 @@ def carregar_mandados_salvos():
                     clean_list = []
                     for item in dados:
                         if isinstance(item, dict):
-                            comarca_n, cia_n = normalizar_localizacao(item.get("orgao_expedidor", "") + " " + item.get("comarca", ""))
-                            if comarca_n != "Outras Comarcas (Paraná)":
-                                item["comarca"] = comarca_n
-                                item["companhia"] = cia_n
+                            c_norm = normalizar_municipio(item.get("comarca", item.get("municipio", "")))
+                            sede_norm = identificar_comarca_sede(item.get("comarca_sede", item.get("orgao_expedidor", c_norm)))
+                            cia_norm = identificar_companhia(c_norm)
+                            item["comarca"] = c_norm
+                            item["comarca_sede"] = sede_norm
+                            item["companhia"] = cia_norm
                             clean_list.append(item)
                     return clean_list
                 return []
@@ -162,12 +183,16 @@ def salvar_mandados_disco(lista_mandados):
         limpos = []
         for item in lista_mandados:
             if isinstance(item, dict):
+                c_norm = normalizar_municipio(item.get("comarca", item.get("municipio", "")))
+                sede_norm = identificar_comarca_sede(item.get("comarca_sede", item.get("orgao_expedidor", c_norm)))
+                cia_norm = identificar_companhia(c_norm)
                 limpos.append({
                     "id": str(item.get("id", "")),
                     "nome": str(item.get("nome", "NÃO INFORMADO")),
                     "cpf": str(item.get("cpf", "000.***.***-00")),
-                    "comarca": str(item.get("comarca", "Outras Comarcas (Paraná)")),
-                    "companhia": str(item.get("companhia", "Outras Comarcas (Paraná)")),
+                    "comarca": str(c_norm),
+                    "comarca_sede": str(sede_norm),
+                    "companhia": str(cia_norm),
                     "orgao_expedidor": str(item.get("orgao_expedidor", "Vara Criminal da Comarca")),
                     "expedicao_datahora": str(item.get("expedicao_datahora", "")),
                     "timestamp": float(item.get("timestamp", 0.0)),
@@ -233,9 +258,9 @@ def processar_texto_importado(texto_bruto):
             if data_match:
                 current_record['data'] = data_match.group(1)
                 
-            comarca_det, cia_det = normalizar_localizacao(l)
-            if comarca_det != "Outras Comarcas (Paraná)" and 'cidade' not in current_record:
-                current_record['cidade'] = comarca_det
+            c_detectada = normalizar_municipio(l)
+            if c_detectada != l and 'cidade' not in current_record:
+                current_record['cidade'] = c_detectada
                 
             if ('vara' in l.lower() or 'juizado' in l.lower() or 'comarca' in l.lower() or 'tribunal' in l.lower() or 'tjpr' in l.lower()) and 'orgao' not in current_record:
                 current_record['orgao'] = l
@@ -254,35 +279,33 @@ def processar_texto_importado(texto_bruto):
             
         nome = str(b.get('nome', '')).strip() or "NÃO INFORMADO"
         cpf = str(b.get('cpf', '')).strip() or "000.***.***-00"
+        cidade_raw = b.get('cidade', '')
         orgao = str(b.get('orgao', '')).strip() or "Vara Criminal da Comarca"
         expedicao = str(b.get('data', '')).strip() or agora.strftime("%d/%m/%Y %H:%M:%S")
         
-        comarca, cia = normalizar_localizacao(orgao + " " + str(b.get('cidade', '')))
+        cidade = normalizar_municipio(cidade_raw or orgao)
+        comarca_sede = identificar_comarca_sede(orgao or cidade)
+        cia = identificar_companhia(cidade)
         
         try:
             if ":" in expedicao:
                 dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y %H:%M:%S")
-            elif "/" in expedicao:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
-            elif "-" in expedicao and len(expedicao) >= 10:
-                dt = datetime.datetime.strptime(expedicao[:10], "%Y-%m-%d")
             else:
-                dt = agora
+                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
             ts = float(dt.timestamp())
-            data_fmt = dt.strftime("%d/%m/%Y %H:%M:%S")
         except Exception:
             ts = float(agora.timestamp())
-            data_fmt = expedicao
 
         if not any(m['id'] == mandado_id for m in st.session_state.mandados) and not any(m['id'] == mandado_id for m in novos_mandados):
             item = {
                 "id": str(mandado_id),
                 "nome": str(nome).upper(),
                 "cpf": str(cpf),
-                "comarca": str(comarca),
+                "comarca": str(cidade),
+                "comarca_sede": str(comarca_sede),
                 "companhia": str(cia),
                 "orgao_expedidor": str(orgao),
-                "expedicao_datahora": str(data_fmt),
+                "expedicao_datahora": str(expedicao),
                 "timestamp": float(ts),
                 "situacao": "Pendente de Cumprimento",
                 "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
@@ -302,16 +325,11 @@ def processar_dataframe_importado(df):
     cols_map = {}
     cols_clean = [remover_acentos(str(c).lower().strip()) for c in df.columns]
     
-    # 1. ID
+    # 1. ID / Mandado
     for orig, c in zip(df.columns, cols_clean):
-        if any(k in c for k in ['no mandado', 'num_mandado', 'numero_mandado', 'n_mandado', 'no do mandado', 'numero do mandado', 'numeropeca', 'peca']) or c in ['id', 'mandado', 'numero']:
+        if any(k in c for k in ['no mandado', 'num_mandado', 'numero_mandado', 'n_mandado', 'no do mandado', 'numero do mandado', 'peca']) or c in ['id', 'mandado', 'numero']:
             cols_map['id'] = orig
             break
-    if 'id' not in cols_map:
-        for orig, c in zip(df.columns, cols_clean):
-            if 'mandado' in c or 'peca' in c or 'id' in c:
-                cols_map['id'] = orig
-                break
 
     # 2. Nome
     for orig, c in zip(df.columns, cols_clean):
@@ -325,16 +343,16 @@ def processar_dataframe_importado(df):
             cols_map['cpf'] = orig
             break
 
-    # 4. Órgão Expedidor / Tribunal
+    # 4. Comarca Expedidora / Órgão Expedidor
     for orig, c in zip(df.columns, cols_clean):
-        if 'orgao' in c or 'expedidor' in c or 'vara' in c or 'juizado' in c or 'tribunal' in c:
+        if 'orgao' in c or 'expedidor' in c or 'vara' in c or 'juizado' in c or 'julgador' in c:
             if cols_map.get('id') != orig:
                 cols_map['orgao'] = orig
                 break
 
-    # 5. Comarca
+    # 5. Comarca / Cidade / Municipio
     for orig, c in zip(df.columns, cols_clean):
-        if ('comarca' in c or 'municipio' in c or 'cidade' in c or 'jurisdicao' in c) and cols_map.get('orgao') != orig:
+        if ('comarca' in c or 'municipio' in c or 'cidade' in c or 'jurisdicao' in c) and orig != cols_map.get('orgao'):
             cols_map['comarca'] = orig
             break
 
@@ -354,37 +372,34 @@ def processar_dataframe_importado(df):
             
         nome = str(row[cols_map['nome']]).strip().upper() if 'nome' in cols_map and pd.notna(row[cols_map['nome']]) else "NÃO INFORMADO"
         cpf = str(row[cols_map['cpf']]).strip() if 'cpf' in cols_map and pd.notna(row[cols_map['cpf']]) else "000.***.***-00"
-        orgao_raw = str(row[cols_map['orgao']]).strip() if 'orgao' in cols_map and pd.notna(row[cols_map['orgao']]) else "Vara Criminal"
+        
         comarca_raw = str(row[cols_map['comarca']]).strip() if 'comarca' in cols_map and pd.notna(row[cols_map['comarca']]) else ""
+        orgao_raw = str(row[cols_map['orgao']]).strip() if 'orgao' in cols_map and pd.notna(row[cols_map['orgao']]) else "Vara Criminal da Comarca"
         expedicao = str(row[cols_map['data']]).strip() if 'data' in cols_map and pd.notna(row[cols_map['data']]) else agora.strftime("%d/%m/%Y %H:%M:%S")
 
-        # Priorizar órgão expedidor oficial
-        comarca, cia = normalizar_localizacao(orgao_raw + " " + comarca_raw)
+        cidade = normalizar_municipio(comarca_raw or orgao_raw)
+        comarca_sede = identificar_comarca_sede(orgao_raw or comarca_raw)
+        cia = identificar_companhia(cidade)
 
         try:
             if ":" in expedicao:
                 dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y %H:%M:%S")
-            elif "/" in expedicao:
-                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
-            elif "-" in expedicao and len(expedicao) >= 10:
-                dt = datetime.datetime.strptime(expedicao[:10], "%Y-%m-%d")
             else:
-                dt = agora
+                dt = datetime.datetime.strptime(expedicao, "%d/%m/%Y")
             ts = float(dt.timestamp())
-            data_fmt = dt.strftime("%d/%m/%Y %H:%M:%S")
         except Exception:
             ts = float(agora.timestamp())
-            data_fmt = expedicao
 
         if not any(m['id'] == mandado_id for m in st.session_state.mandados) and not any(m['id'] == mandado_id for m in novos_mandados):
             item = {
                 "id": str(mandado_id),
                 "nome": str(nome),
                 "cpf": str(cpf),
-                "comarca": str(comarca),
+                "comarca": str(cidade),
+                "comarca_sede": str(comarca_sede),
                 "companhia": str(cia),
                 "orgao_expedidor": str(orgao_raw),
-                "expedicao_datahora": str(data_fmt),
+                "expedicao_datahora": str(expedicao),
                 "timestamp": float(ts),
                 "situacao": "Pendente de Cumprimento",
                 "pdf_url": "https://portalbnmp.cnj.jus.br/#/pesquisa-peca"
@@ -433,37 +448,50 @@ def carregar_arquivo_upload(uploaded_file):
 st.sidebar.title("🚨 Filtros PMPR")
 st.sidebar.markdown("**Monitor de Mandados BNMP 3.0**")
 
+# 1. Filtro de Companhias PMPR
 cias_padrao = ["1ª CIA (Cornélio Procópio)", "2ª CIA (Bandeirantes)", "3ª CIA (Assaí)"]
-
 cias_selecionadas = st.sidebar.multiselect(
     "1️⃣ Selecionar Companhia(s):",
     options=list(st.session_state.estruturas.keys()),
     default=cias_padrao
 )
 
-cidades_disponiveis = []
+# 2. Filtro de Comarcas Sedes (Fóruns)
+comarcas_disponiveis = []
 for cia in cias_selecionadas:
-    cidades_disponiveis.extend(st.session_state.estruturas[cia])
+    comarcas_disponiveis.extend(list(st.session_state.estruturas[cia].keys()))
 
-cidades_selecionadas = st.sidebar.multiselect(
-    "2️⃣ Filtrar Cidades/Comarcas:",
-    options=cidades_disponiveis,
-    default=cidades_disponiveis
+comarcas_selecionadas = st.sidebar.multiselect(
+    "2️⃣ Selecionar Comarca(s) Sede (Fóruns):",
+    options=comarcas_disponiveis,
+    default=comarcas_disponiveis
 )
 
-# Filtro de Período com Opção dos Últimos 50 Dias de 2026
+# 3. Filtro de Municípios / Cidades
+municipios_disponiveis = []
+for cia in cias_selecionadas:
+    for comarca in comarcas_selecionadas:
+        if comarca in st.session_state.estruturas[cia]:
+            municipios_disponiveis.extend(st.session_state.estruturas[cia][comarca])
+
+municipios_selecionados = st.sidebar.multiselect(
+    "3️⃣ Filtrar Municípios/Cidades:",
+    options=list(set(municipios_disponiveis)),
+    default=list(set(municipios_disponiveis))
+)
+
+# 4. Filtro de Período de Expedição
 st.sidebar.markdown("---")
-opcoes_periodo = [
-    "⭐ Últimos 50 Dias (Ano 2026)",
-    "📅 Ano 2026 Completo",
-    "🕒 Últimos 30 Dias",
-    "🕒 Últimos 90 Dias",
-    "🕒 Últimos 180 Dias",
-    "♾️ Histórico Completo (Sem Limite de Data)"
-]
-periodo_selecionado = st.sidebar.selectbox(
-    "3️⃣ Período de Expedição:",
-    options=opcoes_periodo,
+opcao_periodo = st.sidebar.selectbox(
+    "4️⃣ Período de Expedição:",
+    options=[
+        "⭐ Últimos 50 Dias (Ano 2026)",
+        "Ano 2026 Completo",
+        "Últimos 30 Dias",
+        "Últimos 90 Dias",
+        "Últimos 180 Dias",
+        "Histórico Completo (Todos os Anos)"
+    ],
     index=0
 )
 
@@ -471,13 +499,14 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📥 Exportar Base Completa (CSV)")
 if st.session_state.mandados:
     df_exp = pd.DataFrame(st.session_state.mandados)
-    cols_export = ['id', 'nome', 'cpf', 'comarca', 'companhia', 'orgao_expedidor', 'expedicao_datahora', 'situacao']
+    cols_export = ['id', 'nome', 'cpf', 'comarca', 'comarca_sede', 'companhia', 'orgao_expedidor', 'expedicao_datahora', 'situacao']
     cols_exist = [c for c in cols_export if c in df_exp.columns]
     df_exp_final = df_exp[cols_exist].rename(columns={
         'id': 'Nº Mandado',
         'nome': 'Nome Procurado',
         'cpf': 'CPF',
-        'comarca': 'Município/Comarca',
+        'comarca': 'Município/Cidade',
+        'comarca_sede': 'Comarca Sede (Fórum)',
         'companhia': 'Companhia PMPR',
         'orgao_expedidor': 'Órgão Expedidor',
         'expedicao_datahora': 'Data de Expedição',
@@ -504,61 +533,61 @@ if st.sidebar.button("🗑️ Limpar Todos os Mandados Salvos"):
 # ÁREA PRINCIPAL (Dashboard)
 st.markdown('<div class="titulo-principal">🚨 PMPR - Sistema Regional de Mandados de Prisão (BNMP 3.0)</div>', unsafe_allow_html=True)
 
-# Aplicação do Filtro Temporal por Timestamp/Data
+# Aplicação do Filtro de Período Temporal
 agora = datetime.datetime.now()
-data_corte_50d_2026 = agora - datetime.timedelta(days=50)
+mandados_filtrados_tempo = []
 
-mandados_validos_periodo = []
 for m in st.session_state.mandados:
-    ts = m.get('timestamp', 0.0)
-    exp_str = m.get('expedicao_datahora', '')
-    
+    ts = m.get('timestamp', 0)
     try:
-        dt_mandado = datetime.datetime.fromtimestamp(ts) if ts > 0 else None
+        dt_m = datetime.datetime.fromtimestamp(ts)
     except Exception:
-        dt_mandado = None
+        dt_m = agora
         
-    if "Últimos 50 Dias (Ano 2026)" in periodo_selecionado:
-        if dt_mandado and dt_mandado.year == 2026 and dt_mandado >= data_corte_50d_2026:
-            mandados_validos_periodo.append(m)
-        elif "2026" in exp_str and dt_mandado and dt_mandado >= data_corte_50d_2026:
-            mandados_validos_periodo.append(m)
-    elif "Ano 2026 Completo" in periodo_selecionado:
-        if dt_mandado and dt_mandado.year == 2026:
-            mandados_validos_periodo.append(m)
-        elif "2026" in exp_str:
-            mandados_validos_periodo.append(m)
-    elif "Últimos 30 Dias" in periodo_selecionado:
-        if dt_mandado and dt_mandado >= (agora - datetime.timedelta(days=30)):
-            mandados_validos_periodo.append(m)
-    elif "Últimos 90 Dias" in periodo_selecionado:
-        if dt_mandado and dt_mandado >= (agora - datetime.timedelta(days=90)):
-            mandados_validos_periodo.append(m)
-    elif "Últimos 180 Dias" in periodo_selecionado:
-        if dt_mandado and dt_mandado >= (agora - datetime.timedelta(days=180)):
-            mandados_validos_periodo.append(m)
-    else: # Histórico Completo
-        mandados_validos_periodo.append(m)
+    if "Últimos 50 Dias (Ano 2026)" in opcao_periodo:
+        if dt_m.year == 2026 and (agora - dt_m).days <= 50:
+            mandados_filtrados_tempo.append(m)
+    elif "Ano 2026 Completo" in opcao_periodo:
+        if dt_m.year == 2026:
+            mandados_filtrados_tempo.append(m)
+    elif "Últimos 30 Dias" in opcao_periodo:
+        if (agora - dt_m).days <= 30:
+            mandados_filtrados_tempo.append(m)
+    elif "Últimos 90 Dias" in opcao_periodo:
+        if (agora - dt_m).days <= 90:
+            mandados_filtrados_tempo.append(m)
+    elif "Últimos 180 Dias" in opcao_periodo:
+        if (agora - dt_m).days <= 180:
+            mandados_filtrados_tempo.append(m)
+    else:
+        mandados_filtrados_tempo.append(m)
 
+# Aplicação do Filtro Geográfico por Companhia, Comarca Sede e Município
 mandados_filtrados = [
-    m for m in mandados_validos_periodo
-    if m['comarca'] in cidades_selecionadas or m['companhia'] in cias_selecionadas
+    m for m in mandados_filtrados_tempo
+    if m.get('companhia') in cias_selecionadas
+    and m.get('comarca_sede', m.get('comarca')) in comarcas_selecionadas
+    and m.get('comarca') in municipios_selecionados
 ]
 
 # Métricas Operacionais
 c_m1, c_m2, c_m3, c_m4 = st.columns(4)
 c_m1.metric("Mandados Salvos (Total)", len(st.session_state.mandados))
-c_m2.metric("Ativos no Período", len(mandados_validos_periodo))
+c_m2.metric("No Período Selecionado", len(mandados_filtrados_tempo))
 c_m3.metric("Filtrados na Tela", len(mandados_filtrados))
 c_m4.metric("Status BNMP 3.0", "Conectado", delta="Tempo Real")
 
 st.markdown("---")
 
-busca = st.text_input("🔍 Pesquisar por Nome, CPF, Comarca ou Nº do Mandado:", placeholder="Digite para buscar...")
+busca = st.text_input("🔍 Pesquisar por Nome, CPF, Comarca Sede, Município ou Nº do Mandado:", placeholder="Digite para buscar...")
 if busca:
     mandados_filtrados = [
         m for m in mandados_filtrados
-        if busca.lower() in m['nome'].lower() or busca in m['id'] or busca in m['cpf'] or busca.lower() in m['comarca'].lower() or busca.lower() in m['orgao_expedidor'].lower()
+        if busca.lower() in m['nome'].lower()
+        or busca in m['id']
+        or busca in m['cpf']
+        or busca.lower() in m['comarca'].lower()
+        or busca.lower() in m.get('comarca_sede', '').lower()
     ]
 
 mandados_filtrados = sorted(mandados_filtrados, key=lambda x: x.get('timestamp', 0), reverse=True)
@@ -569,12 +598,12 @@ with aba1:
     st.subheader(f"Mandados Expedidos na Região ({len(mandados_filtrados)})")
     
     if not mandados_filtrados:
-        qtd_fora = len(mandados_validos_periodo) - len(mandados_filtrados)
+        qtd_fora = len(mandados_filtrados_tempo) - len(mandados_filtrados)
         if qtd_fora > 0:
-            st.warning(f"⚠️ Existem **{qtd_fora} mandado(s) ativo(s)** nos últimos 50 dias de 2026 salvos no banco de dados, mas pertencem a comarcas fora dos filtros selecionados.")
-            st.info("💡 **Como visualizar:** Na barra lateral à esquerda, em **'1️⃣ Selecionar Companhia(s)'**, marque **'Outras Comarcas (Paraná)'**.")
+            st.warning(f"⚠️ Existem **{qtd_fora} mandado(s)** no período selecionado salvos no banco de dados, mas eles pertencem a Comarcas/Municípios fora dos filtros atualmente selecionados.")
+            st.info("💡 **Como visualizar:** Na barra lateral, certifique-se de marcar as Companhias, Comarcas Sedes e Municípios desejados.")
         else:
-            st.info("Nenhum mandado localizado no banco de dados para os filtros selecionados.")
+            st.info("Nenhum mandado localizado para os filtros selecionados.")
     else:
         for m in mandados_filtrados:
             st.markdown(f"""
@@ -585,7 +614,8 @@ with aba1:
                 </div>
                 <div style="margin-top: 8px; color: #475569; font-size: 13px;">
                     <span class="badge-cia">🛡️ {m['companhia']}</span>
-                    <b>Comarca/Município:</b> <span class="badge-cidade">📍 {m['comarca']}</span>
+                    <span class="badge-comarca">🏛️ Comarca Sede: {m.get('comarca_sede', m['comarca'])}</span>
+                    <b>Município:</b> <span class="badge-cidade">📍 {m['comarca']}</span>
                 </div>
                 <div style="margin-top: 8px; color: #334155; font-size: 13px;">
                     ⚖️ <b>Órgão Expedidor:</b> {m['orgao_expedidor']} | 
@@ -651,7 +681,10 @@ with aba3:
             st.markdown("#### Mandados por Companhia")
             st.bar_chart(df_mandados['companhia'].value_counts())
         with col_g2:
-            st.markdown("#### Mandados por Município")
-            st.bar_chart(df_mandados['comarca'].value_counts())
+            st.markdown("#### Mandados por Comarca Sede")
+            if 'comarca_sede' in df_mandados.columns:
+                st.bar_chart(df_mandados['comarca_sede'].value_counts())
+            else:
+                st.bar_chart(df_mandados['comarca'].value_counts())
     else:
         st.write("Nenhum dado disponível para estatísticas.")
