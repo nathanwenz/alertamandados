@@ -91,25 +91,34 @@ ESTRUTURA_COMPANHIAS = {
 
 ARQUIVO_DADOS = "mandados.json"
 
-TODAS_CIDADES = []
-for c_list in ESTRUTURA_COMPANHIAS.values():
-    TODAS_CIDADES.extend(c_list)
-TODAS_CIDADES = sorted(list(set(TODAS_CIDADES)), key=lambda x: len(x), reverse=True)
+# Tabela de normalização para evitar divergências de caixa e acentuação
+MAPA_NORMALIZACAO = {}
+for cia_key, cidades_list in ESTRUTURA_COMPANHIAS.items():
+    for c in cidades_list:
+        MAPA_NORMALIZACAO[c.lower()] = c
+        c_sem_acento = c.lower().replace('á','a').replace('ã','a').replace('â','a').replace('é','e').replace('ê','e').replace('í','i').replace('ó','o').replace('ô','o').replace('ú','u').replace('ç','c')
+        MAPA_NORMALIZACAO[c_sem_acento] = c
+        cap_js = " ".join([w.capitalize() for w in c.split(" ")])
+        MAPA_NORMALIZACAO[cap_js.lower()] = c
+
+def normalizar_cidade(nome_raw):
+    if not nome_raw:
+        return "Outras Comarcas (Paraná)"
+    raw = str(nome_raw).strip()
+    raw_lower = raw.lower()
+    if raw_lower in MAPA_NORMALIZACAO:
+        return MAPA_NORMALIZACAO[raw_lower]
+    for key, oficial in MAPA_NORMALIZACAO.items():
+        if key in raw_lower:
+            return oficial
+    return raw
 
 def identificar_companhia(cidade_nome):
-    cidade_clean = str(cidade_nome).strip().lower()
+    cidade_norm = normalizar_cidade(cidade_nome)
     for cia, cidades in ESTRUTURA_COMPANHIAS.items():
-        for c in cidades:
-            if c.lower() == cidade_clean or c.lower() in cidade_clean or cidade_clean in c.lower():
-                return cia
+        if cidade_norm in cidades:
+            return cia
     return "Outras Comarcas (Paraná)"
-
-def identificar_cidade_no_texto(texto):
-    texto_lower = str(texto).lower()
-    for c in TODAS_CIDADES:
-        if c.lower() in texto_lower:
-            return c
-    return None
 
 def carregar_mandados_salvos():
     if os.path.exists(ARQUIVO_DADOS):
@@ -117,7 +126,15 @@ def carregar_mandados_salvos():
             with open(ARQUIVO_DADOS, "r", encoding="utf-8") as f:
                 dados = json.load(f)
                 if isinstance(dados, list):
-                    return dados
+                    clean_list = []
+                    for item in dados:
+                        if isinstance(item, dict):
+                            c_norm = normalizar_cidade(item.get("comarca", ""))
+                            cia_norm = identificar_companhia(c_norm)
+                            item["comarca"] = c_norm
+                            item["companhia"] = cia_norm
+                            clean_list.append(item)
+                    return clean_list
                 return []
         except Exception:
             return []
@@ -128,12 +145,14 @@ def salvar_mandados_disco(lista_mandados):
         limpos = []
         for item in lista_mandados:
             if isinstance(item, dict):
+                c_norm = normalizar_cidade(item.get("comarca", ""))
+                cia_norm = identificar_companhia(c_norm)
                 limpos.append({
                     "id": str(item.get("id", "")),
                     "nome": str(item.get("nome", "NÃO INFORMADO")),
                     "cpf": str(item.get("cpf", "000.***.***-00")),
-                    "comarca": str(item.get("comarca", "Outras Comarcas (Paraná)")),
-                    "companhia": str(item.get("companhia", "Outras Comarcas (Paraná)")),
+                    "comarca": str(c_norm),
+                    "companhia": str(cia_norm),
                     "orgao_expedidor": str(item.get("orgao_expedidor", "Vara Criminal da Comarca")),
                     "expedicao_datahora": str(item.get("expedicao_datahora", "")),
                     "timestamp": float(item.get("timestamp", 0.0)),
@@ -199,9 +218,9 @@ def processar_texto_importado(texto_bruto):
             if data_match:
                 current_record['data'] = data_match.group(1)
                 
-            cidade_encontrada = identificar_cidade_no_texto(l)
-            if cidade_encontrada and 'cidade' not in current_record:
-                current_record['cidade'] = cidade_encontrada
+            c_detectada = normalizar_cidade(l)
+            if c_detectada != l and 'cidade' not in current_record:
+                current_record['cidade'] = c_detectada
                 
             if ('vara' in l.lower() or 'juizado' in l.lower() or 'comarca' in l.lower() or 'tribunal' in l.lower() or 'tjpr' in l.lower()) and 'orgao' not in current_record:
                 current_record['orgao'] = l
@@ -220,7 +239,7 @@ def processar_texto_importado(texto_bruto):
             
         nome = str(b.get('nome', '')).strip() or "NÃO INFORMADO"
         cpf = str(b.get('cpf', '')).strip() or "000.***.***-00"
-        cidade = str(b.get('cidade', '')).strip() or "Outras Comarcas (Paraná)"
+        cidade = normalizar_cidade(b.get('cidade', ''))
         orgao = str(b.get('orgao', '')).strip() or "Vara Criminal da Comarca"
         expedicao = str(b.get('data', '')).strip() or agora.strftime("%d/%m/%Y %H:%M:%S")
         
@@ -302,9 +321,11 @@ for m in st.session_state.mandados:
     except Exception:
         mandados_validos_45d.append(m)
 
+cidades_sel_norm = [normalizar_cidade(c) for c in cidades_selecionadas]
+
 mandados_filtrados = [
     m for m in mandados_validos_45d
-    if m['comarca'] in cidades_selecionadas
+    if normalizar_cidade(m['comarca']) in cidades_sel_norm
 ]
 
 c_m1.metric("Mandados Salvos (Total)", len(st.session_state.mandados))
