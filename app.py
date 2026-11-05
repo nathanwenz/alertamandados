@@ -351,5 +351,5 @@ with aba3:
         with col_g2:
             st.markdown("#### Mandados por Município")
             st.bar_chart(df_mandados['comarca'].value_counts())
-            else:
+    else:
         st.write("Nenhum dado disponível para estatísticas.")
