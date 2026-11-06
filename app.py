@@ -568,7 +568,7 @@ def carregar_arquivo_upload(uploaded_file, progress_callback=None):
 if st.sidebar.button("🔄 Atualizar / Recarregar Site", type="primary", use_container_width=True):
     recarregar_app()
 
-st.sidebar.title("🚨 Filtros área do 18°BPM")
+st.sidebar.title("🚨 ÁREA DO 18°BPM 🚨")
 st.sidebar.markdown("**Monitor de Mandados BNMP 3.0**")
 
 cias_padrao = ["1ª CIA (Cornélio Procópio)", "2ª CIA (Bandeirantes)", "3ª CIA (Assaí)"]
