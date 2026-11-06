@@ -16,31 +16,46 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização visual customizada e ocultação de elementos de criação do Streamlit
+# Estilização visual customizada e controle do botão de expandir/recolher a barra lateral
 st.markdown("""
 <style>
-    /* Ocultar barra superior, menu de 3 pontos, botão Fork e ícone do GitHub */
+    /* Ocultar elementos desnecessários da interface do Streamlit */
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
     footer {visibility: hidden;}
+    .stAppDeployButton {display: none !important;}
+    [data-testid="stDecoration"] {display: none !important;}
     
-    /* Garantir que o botão de expandir/recolher a barra lateral continue visível e destacado */
-    [data-testid="collapsedControl"] {
+    /* Deixar o cabeçalho transparente sem esconder o botão de expandir a barra lateral */
+    [data-testid="stHeader"] {
+        background-color: transparent !important;
+        z-index: 99999 !important;
+    }
+
+    /* TORNAR O BOTÃO DE EXPANDIR/RECOLHER A BARRA LATERAL (SETA) SEMPRE VISÍVEL E DESTACADO */
+    [data-testid="collapsedControl"], button[aria-label="Expand sidebar"], button[aria-label="Collapse sidebar"] {
         display: flex !important;
         visibility: visible !important;
+        opacity: 1 !important;
         position: fixed !important;
         top: 12px !important;
         left: 12px !important;
-        z-index: 999999 !important;
+        z-index: 9999999 !important;
         background-color: #1E3A8A !important;
-        color: white !important;
+        color: #FFFFFF !important;
+        border: 2px solid #2563EB !important;
         border-radius: 8px !important;
-        padding: 4px !important;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
+        padding: 6px 10px !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
+        cursor: pointer !important;
     }
-    [data-testid="collapsedControl"] svg {
-        fill: white !important;
-        color: white !important;
+    
+    /* Garantir cor branca do ícone de seta */
+    [data-testid="collapsedControl"] svg, button[aria-label="Expand sidebar"] svg, button[aria-label="Collapse sidebar"] svg {
+        fill: #FFFFFF !important;
+        color: #FFFFFF !important;
+        stroke: #FFFFFF !important;
+        width: 20px !important;
+        height: 20px !important;
     }
 
     .titulo-principal {
@@ -50,6 +65,7 @@ st.markdown("""
         border-bottom: 2px solid #1E3A8A;
         padding-bottom: 10px;
         margin-bottom: 20px;
+        margin-top: 10px;
     }
     .card-mandado {
         background-color: #F8FAFC;
