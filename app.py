@@ -24,6 +24,25 @@ st.markdown("""
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
+    /* Garantir que o botão de expandir/recolher a barra lateral continue visível e destacado */
+    [data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        position: fixed !important;
+        top: 12px !important;
+        left: 12px !important;
+        z-index: 999999 !important;
+        background-color: #1E3A8A !important;
+        color: white !important;
+        border-radius: 8px !important;
+        padding: 4px !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
+    }
+    [data-testid="collapsedControl"] svg {
+        fill: white !important;
+        color: white !important;
+    }
+
     .titulo-principal {
         font-size: 24px;
         font-weight: bold;
