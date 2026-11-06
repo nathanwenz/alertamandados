@@ -3,6 +3,7 @@ import json
 import os
 import re
 import io
+import time
 import unicodedata
 import pandas as pd
 import streamlit as st
@@ -309,7 +310,7 @@ if 'estruturas' not in st.session_state:
 if 'mandados' not in st.session_state:
     st.session_state.mandados = carregar_mandados_salvos()
 
-def processar_texto_importado(texto_bruto):
+def processar_texto_importado(texto_bruto, progress_callback=None):
     linhas = [l.strip() for l in texto_bruto.splitlines() if l.strip()]
     novos_mandados = []
     
@@ -322,12 +323,12 @@ def processar_texto_importado(texto_bruto):
                 partes = [p.strip() for p in l.split('|')]
                 if len(partes) >= 2:
                     blocos_dados.append({
-                        'id': partes if len(partes) > 0 else '',
-                        'nome': partes if len(partes) > 1 else '',
-                        'cpf': partes if len(partes) > 2 else '',
-                        'cidade': partes if len(partes) > 3 else '',
-                        'orgao': partes if len(partes) > 4 else '',
-                        'data': partes if len(partes) > 5 else ''
+                        'id': partes[0] if len(partes) > 0 else '',
+                        'nome': partes[1] if len(partes) > 1 else '',
+                        'cpf': partes[2] if len(partes) > 2 else '',
+                        'cidade': partes[3] if len(partes) > 3 else '',
+                        'orgao': partes[4] if len(partes) > 4 else '',
+                        'data': partes[5] if len(partes) > 5 else ''
                     })
     else:
         current_record = {}
@@ -363,7 +364,12 @@ def processar_texto_importado(texto_bruto):
         if current_record:
             blocos_dados.append(current_record)
             
-    for b in blocos_dados:
+    total_blocos = len(blocos_dados)
+    for idx, b in enumerate(blocos_dados):
+        if progress_callback and total_blocos > 0 and (idx % max(1, total_blocos // 10) == 0 or idx == total_blocos - 1):
+            pct = int(((idx + 1) / total_blocos) * 100)
+            progress_callback(pct, f"⏳ Processando registro {idx + 1} de {total_blocos} ({pct}%)...")
+
         mandado_id = str(b.get('id', '')).strip()
         if not mandado_id:
             continue
@@ -402,7 +408,7 @@ def processar_texto_importado(texto_bruto):
         return len(novos_mandados)
     return 0
 
-def processar_dataframe_importado(df):
+def processar_dataframe_importado(df, progress_callback=None):
     if df is None or df.empty:
         return 0
         
@@ -446,8 +452,13 @@ def processar_dataframe_importado(df):
         cols_map['data'] = col_data_exp
 
     novos_mandados = []
+    total_linhas = len(df)
     
     for idx, row in df.iterrows():
+        if progress_callback and total_linhas > 0 and (idx % max(1, total_linhas // 20) == 0 or idx == total_linhas - 1):
+            pct = int(((idx + 1) / total_linhas) * 100)
+            progress_callback(pct, f"⏳ Analisando linha {idx + 1} de {total_linhas} ({pct}%)...")
+
         mandado_id = str(row[cols_map['id']]).strip() if 'id' in cols_map and pd.notna(row[cols_map['id']]) else f"BNMP-2026-CSV-{idx+1}"
         if not mandado_id or mandado_id == "nan":
             continue
@@ -486,7 +497,7 @@ def processar_dataframe_importado(df):
         return len(novos_mandados)
     return 0
 
-def carregar_arquivo_upload(uploaded_file):
+def carregar_arquivo_upload(uploaded_file, progress_callback=None):
     filename = uploaded_file.name.lower()
     df = None
     if filename.endswith('.xlsx') or filename.endswith('.xls'):
@@ -511,12 +522,12 @@ def carregar_arquivo_upload(uploaded_file):
         if df is None or df.empty or len(df.columns) == 1:
             try:
                 texto = content_bytes.decode('utf-8', errors='ignore')
-                return processar_texto_importado(texto)
+                return processar_texto_importado(texto, progress_callback=progress_callback)
             except Exception as e:
                 st.error(f"Erro ao ler arquivo de texto/CSV: {e}")
                 return 0
 
-    return processar_dataframe_importado(df)
+    return processar_dataframe_importado(df, progress_callback=progress_callback)
 
 # BARRA LATERAL (Sidebar)
 if st.sidebar.button("🔄 Atualizar / Recarregar Site", type="primary", use_container_width=True):
@@ -740,10 +751,21 @@ with aba2:
         st.markdown("#### 📄 Opção A: Importar Arquivo CSV / Excel")
         file_up = st.file_uploader("Selecione o arquivo (.csv, .xlsx):", type=['csv', 'xlsx', 'xls', 'txt'])
         if file_up is not None:
-            if st.button("📥 Processar Arquivo Carregado", type="primary"):
-                qtd = carregar_arquivo_upload(file_up)
+            if st.button("📥 Processar Arquivo Carregado", type="primary", use_container_width=True):
+                progress_bar = st.progress(0, text="⏳ Iniciando leitura do arquivo...")
+                
+                def callback_progresso(pct, msg):
+                    progress_bar.progress(pct, text=msg)
+
+                qtd = carregar_arquivo_upload(file_up, progress_callback=callback_progresso)
+                
+                progress_bar.progress(100, text="✅ Processamento concluído!")
+                time.sleep(0.5)
+                progress_bar.empty()
+                
                 if qtd > 0:
                     st.success(f"✅ {qtd} novo(s) mandado(s) importado(s) do arquivo com sucesso!")
+                    time.sleep(0.5)
                     recarregar_app()
                 else:
                     st.warning("Nenhum mandado novo foi adicionado (ou todos já constam no banco).")
@@ -751,11 +773,22 @@ with aba2:
     with col_txt:
         st.markdown("#### 📋 Opção B: Cole o Texto (Bookmarklet / Copia Direta)")
         texto_input = st.text_area("Cole aqui o texto capturado do BNMP 3.0:", height=180, placeholder="Cole aqui os dados capturados...")
-        if st.button("📥 Processar Texto Colado"):
+        if st.button("📥 Processar Texto Colado", use_container_width=True):
             if texto_input.strip():
-                qtd = processar_texto_importado(texto_input)
+                progress_bar = st.progress(0, text="⏳ Lendo texto colado...")
+                
+                def callback_progresso_txt(pct, msg):
+                    progress_bar.progress(pct, text=msg)
+
+                qtd = processar_texto_importado(texto_input, progress_callback=callback_progresso_txt)
+                
+                progress_bar.progress(100, text="✅ Processamento concluído!")
+                time.sleep(0.5)
+                progress_bar.empty()
+                
                 if qtd > 0:
                     st.success(f"✅ {qtd} novo(s) mandado(s) importado(s) com sucesso!")
+                    time.sleep(0.5)
                     recarregar_app()
                 else:
                     st.warning("Nenhum mandado novo foi adicionado.")
