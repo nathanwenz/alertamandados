@@ -131,7 +131,7 @@ st.markdown("""
     }
 </style>
 
-<div class="watermark-dev">Developer;<br>Nathan Wenzel</div>
+<div class="watermark-dev">Developer:<br>Nathan Wenzel</div>
 """, unsafe_allow_html=True)
 
 # Estrutura Organizacional Hierárquica da PMPR (Companhia -> Comarcas Sedes -> Municípios)
@@ -568,7 +568,7 @@ def carregar_arquivo_upload(uploaded_file, progress_callback=None):
 if st.sidebar.button("🔄 Atualizar / Recarregar Site", type="primary", use_container_width=True):
     recarregar_app()
 
-st.sidebar.title("🚨 Filtros PMPR")
+st.sidebar.title("🚨 Filtros área do 18°BPM")
 st.sidebar.markdown("**Monitor de Mandados BNMP 3.0**")
 
 cias_padrao = ["1ª CIA (Cornélio Procópio)", "2ª CIA (Bandeirantes)", "3ª CIA (Assaí)"]
